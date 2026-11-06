@@ -168,9 +168,9 @@ begin
     end;
     perform set_config('role', 'none', true);
     insert into public.platform_admins (user_id) values (ua);
+    select paid_until into v_until from public.businesses where id = v_biz;
     perform set_config('role', 'authenticated', true);
     perform set_config('request.jwt.claims', json_build_object('sub', ua, 'role', 'authenticated')::text, true);
-    select paid_until into v_until from public.businesses where id = v_biz;
     perform public.admin_process_payment(v_pay, true);
     v_j := public.admin_overview();
     perform set_config('role', 'none', true);
