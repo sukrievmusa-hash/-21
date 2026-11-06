@@ -146,6 +146,7 @@ begin
     exception when others then
       step := 'ассистент не записывает на занятое время'; ok := true; info := sqlerrm; return next;
     end;
+    perform set_config('role', 'none', true);
     step := 'тариф «Сеть» — 30 сотрудников'; ok := private.plan_staff_limit('network') = 30; info := null; return next;
 
     -- 5. напоминание за сутки

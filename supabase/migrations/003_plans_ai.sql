@@ -430,7 +430,7 @@ begin
 
   if not private.biz_active(b) then
     return jsonb_build_object('mode', 'reply', 'text', 'Сейчас онлайн-ответы недоступны.'
-      || coalesce(E'\nПозвоните, пожалуйста: ' || private.fmt_phone(nullif(b.phone, '')), ''));
+      || coalesce(E'\nПозвоните, пожалуйста: ' || coalesce(private.fmt_phone(private.norm_phone(b.phone)), nullif(b.phone, '')), ''));
   end if;
 
   -- владелец сейчас отвечает сам
@@ -457,10 +457,10 @@ begin
   if b.tg_chat_id is not null then
     perform private.ask_owner(b, p_chat, v_who, v_text, null);
     return jsonb_build_object('mode', 'reply', 'text', '📨 Передал ваше сообщение в «' || private.h(b.name) || '». Вам ответят здесь.'
-      || coalesce(E'\nСрочно — звоните: ' || private.fmt_phone(nullif(b.phone, '')), ''));
+      || coalesce(E'\nСрочно — звоните: ' || coalesce(private.fmt_phone(private.norm_phone(b.phone)), nullif(b.phone, '')), ''));
   end if;
   return jsonb_build_object('mode', 'reply', 'text', 'Чтобы получить ответ, позвоните, пожалуйста'
-    || coalesce(': ' || private.fmt_phone(nullif(b.phone, '')), ' в «' || private.h(b.name) || '»') || '.');
+    || coalesce(': ' || coalesce(private.fmt_phone(private.norm_phone(b.phone)), nullif(b.phone, '')), ' в «' || private.h(b.name) || '»') || '.');
 end $$;
 
 create or replace function private.ask_owner(b public.businesses, p_chat bigint, p_who text, p_text text, p_note text) returns void
@@ -485,7 +485,7 @@ begin
     'api_key', (select ai_api_key from private.secrets where id = 1),
     'model', (select ai_model from public.platform_settings where id = 1),
     'site_url', (select site_url from public.platform_settings where id = 1),
-    'business', jsonb_build_object('name', b.name, 'slug', b.slug, 'category', b.category, 'phone', private.fmt_phone(b.phone),
+    'business', jsonb_build_object('name', b.name, 'slug', b.slug, 'category', b.category, 'phone', coalesce(private.fmt_phone(private.norm_phone(b.phone)), b.phone),
       'address', b.address, 'description', b.description, 'timezone', b.timezone,
       'now_local', to_char(now() at time zone b.timezone, 'YYYY-MM-DD HH24:MI'),
       'weekday', extract(isodow from now() at time zone b.timezone)::int,
