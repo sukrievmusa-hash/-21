@@ -30,9 +30,9 @@ from public.platform_settings s,
      E'1 сотрудник\nОнлайн-запись и журнал\nНапоминания в Telegram\nБаза клиентов', true, 10),
   ('business', 'Бизнес',  0, 10, false, 0,
      E'До 10 сотрудников\nВсё из «Старт»\nГрафик для каждого мастера\nСтатистика по команде', true, 20),
-  ('network',  'Сеть',    24990, 30, false, 0,
+  ('network',  'Сеть',    55000, 30, false, 0,
      E'До 30 сотрудников\nВсё из «Бизнес»\nДля сетей и больших салонов', true, 30),
-  ('premium',  'Премиум + ИИ', 34990, 30, true, 2000,
+  ('premium',  'Премиум + ИИ', 75000, 30, true, 2000,
      E'До 30 сотрудников\nВсё из «Сеть»\nИИ-ассистент отвечает клиентам в Telegram 24/7\nИИ сам записывает клиентов\nДо 2000 ответов ИИ в месяц', true, 40)
 ) as v(code, title, price, staff_limit, ai, ai_limit, features, is_public, sort)
 on conflict (code) do nothing;
@@ -726,3 +726,13 @@ revoke execute on function private.owner_send(public.businesses, bigint, text), 
   from public, anon, authenticated;
 
 alter function private.biz_ai_ready(public.businesses) set search_path = public, extensions;
+
+-- Ключ и модель ИИ для edge-функции (проверка из админки)
+create or replace function public.ai_platform() returns jsonb
+language sql stable security definer set search_path = public, extensions as $$
+  select jsonb_build_object('api_key', (select ai_api_key from private.secrets where id = 1),
+                            'model', (select ai_model from public.platform_settings where id = 1))
+$$;
+revoke execute on function public.ai_platform() from public, anon, authenticated;
+grant execute on function public.ai_platform() to service_role;
+

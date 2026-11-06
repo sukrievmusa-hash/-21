@@ -42,7 +42,8 @@ function renderHead() {
     <h1>${esc(b.name)}</h1>
     <div class="meta">${[b.category, b.address].filter(Boolean).map(esc).join(' · ')}
       ${b.phone ? ` · <a class="nowrap" href="${telLink(b.phone)}">${esc(b.phone)}</a>` : ''}</div>
-    ${b.description ? `<p class="meta" style="margin:8px 0 0">${esc(b.description)}</p>` : ''}`;
+    ${b.description ? `<p class="meta" style="margin:8px 0 0">${esc(b.description)}</p>` : ''}
+    ${b.chat && b.bot_username ? `<a class="btn btn-sm" style="margin-top:12px;background:rgba(255,255,255,.95);color:#0f172a" target="_blank" rel="noopener" href="https://t.me/${esc(b.bot_username)}?start=s_${esc(b.slug)}">💬 ${b.ai ? 'Задать вопрос ассистенту' : 'Задать вопрос'} в Telegram</a>` : ''}`;
 }
 
 function bar(n) {

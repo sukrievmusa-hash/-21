@@ -1,6 +1,7 @@
 // Kezek — Telegram-бот: webhook от Telegram + подключение бота из админки.
 // Деплой: supabase functions deploy tg --no-verify-jwt
 import { createClient } from "npm:@supabase/supabase-js@2";
+import { callClaude, runAgent } from "./ai.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -37,24 +38,46 @@ async function getConfig(): Promise<{ token: string | null; secret: string }> {
   return data;
 }
 
+async function send(token: string, chatId: number, text: string, extra: Record<string, unknown> = {}) {
+  return await tg(token, "sendMessage", { chat_id: chatId, text, disable_web_page_preview: true, ...extra });
+}
+
+async function answerWithAi(token: string, businessId: string, chatId: number) {
+  await tg(token, "sendChatAction", { chat_id: chatId, action: "typing" });
+  try {
+    const r = await runAgent(sb, businessId, chatId);
+    await send(token, chatId, r.text.slice(0, 4000));
+    await sb.rpc("ai_save_reply", { p_business: businessId, p_chat: chatId, p_text: r.text, p_in: r.tokensIn, p_out: r.tokensOut });
+  } catch (e) {
+    console.error("ai", e);
+    await send(token, chatId, "Извините, сейчас не получается ответить. Я передал ваш вопрос администратору — он ответит здесь.");
+    await sb.rpc("ai_handoff", { p_business: businessId, p_chat: chatId, p_summary: "ассистент временно недоступен" });
+  }
+}
+
 async function handleUpdate(token: string, update: any) {
   if (update.message?.chat?.id) {
-    const chatId = update.message.chat.id;
-    if (update.message.chat.type !== "private") return;
-    const text = String(update.message.text ?? "").trim();
-    const payload = text.startsWith("/start") ? (text.split(/\s+/)[1] ?? "") : "";
-    const { data, error } = await sb.rpc("tg_handle_start", { p_chat_id: chatId, p_payload: payload });
-    if (error) {
-      console.error("tg_handle_start", error);
+    const msg = update.message;
+    const chatId = msg.chat.id;
+    if (msg.chat.type !== "private") return;
+    const text = String(msg.text ?? msg.caption ?? "").trim();
+    if (text.startsWith("/start")) {
+      const payload = text.split(/\s+/)[1] ?? "";
+      const { data, error } = await sb.rpc("tg_handle_start", { p_chat_id: chatId, p_payload: payload });
+      if (error) return console.error("tg_handle_start", error);
+      await send(token, chatId, data.text, { parse_mode: "HTML", ...(data.reply_markup ? { reply_markup: data.reply_markup } : {}) });
       return;
     }
-    await tg(token, "sendMessage", {
-      chat_id: chatId,
-      text: data.text,
-      parse_mode: "HTML",
-      disable_web_page_preview: true,
-      ...(data.reply_markup ? { reply_markup: data.reply_markup } : {}),
+    const name = [msg.from?.first_name, msg.from?.last_name].filter(Boolean).join(" ");
+    const { data, error } = await sb.rpc("tg_route_text", {
+      p_chat: chatId, p_text: text, p_name: name || null, p_username: msg.from?.username ?? null,
     });
+    if (error) return console.error("tg_route_text", error);
+    if (data.mode === "reply") {
+      await send(token, chatId, data.text, { parse_mode: "HTML", ...(data.reply_markup ? { reply_markup: data.reply_markup } : {}) });
+    } else if (data.mode === "ai") {
+      await answerWithAi(token, data.business_id, chatId);
+    }
     return;
   }
 
@@ -80,13 +103,18 @@ async function handleUpdate(token: string, update: any) {
   }
 }
 
-async function requireAdmin(req: Request): Promise<string | null> {
+async function userId(req: Request): Promise<string | null> {
   const jwt = (req.headers.get("authorization") ?? "").replace(/^Bearer\s+/i, "");
   if (!jwt) return null;
   const { data, error } = await sb.auth.getUser(jwt);
-  if (error || !data?.user) return null;
-  const { data: adm } = await sb.from("platform_admins").select("user_id").eq("user_id", data.user.id).maybeSingle();
-  return adm ? data.user.id : null;
+  return error || !data?.user ? null : data.user.id;
+}
+
+async function requireAdmin(req: Request): Promise<string | null> {
+  const id = await userId(req);
+  if (!id) return null;
+  const { data: adm } = await sb.from("platform_admins").select("user_id").eq("user_id", id).maybeSingle();
+  return adm ? id : null;
 }
 
 Deno.serve(async (req) => {
@@ -101,14 +129,45 @@ Deno.serve(async (req) => {
     if (tgSecret !== null) {
       if (!cfg.token || tgSecret !== cfg.secret) return json({ ok: false }, 401);
       const update = await req.json();
-      await handleUpdate(cfg.token, update);
+      const job = handleUpdate(cfg.token!, update).catch((e) => console.error("update", e));
+      const rt = (globalThis as any).EdgeRuntime;
+      if (rt?.waitUntil) rt.waitUntil(job); else await job;
       return json({ ok: true });
     }
 
-    // 2) Действия администратора платформы
+    const body = await req.json().catch(() => ({}));
+
+    // 2) Проверка ИИ-ассистента владельцем из кабинета
+    if (body.action === "ai_test") {
+      const uid = await userId(req);
+      if (!uid) return json({ error: "Войдите в кабинет" }, 401);
+      const text = String(body.text ?? "").trim().slice(0, 2000);
+      if (!text) return json({ error: "Напишите сообщение" }, 400);
+      const { data: prep, error: pe } = await sb.rpc("ai_test_prepare", { p_user: uid, p_text: text, p_reset: !!body.reset });
+      if (pe) return json({ error: pe.message }, 400);
+      try {
+        const r = await runAgent(sb, prep.business_id, 0, true);
+        await sb.rpc("ai_save_reply", { p_business: prep.business_id, p_chat: 0, p_text: r.text, p_in: r.tokensIn, p_out: r.tokensOut });
+        return json({ ok: true, reply: r.text, booked: !!r.booked, handoff: !!r.handoff });
+      } catch (e) {
+        return json({ error: String((e as Error)?.message ?? e) }, 502);
+      }
+    }
+
+    // 3) Действия администратора платформы
     const adminId = await requireAdmin(req);
     if (!adminId) return json({ error: "Нет доступа: войдите как администратор" }, 403);
-    const body = await req.json().catch(() => ({}));
+
+    if (body.action === "ai_ping") {
+      const { data: p } = await sb.rpc("ai_platform");
+      if (!p?.api_key) return json({ error: "Ключ ИИ не сохранён" }, 400);
+      try {
+        const j = await callClaude(p.api_key, { model: p.model, max_tokens: 20, messages: [{ role: "user", content: "Ответь одним словом: работает?" }] });
+        return json({ ok: true, model: j.model, reply: j.content?.[0]?.text ?? "" });
+      } catch (e) {
+        return json({ error: String((e as Error)?.message ?? e) }, 400);
+      }
+    }
 
     if (body.action === "setup") {
       const token = String(body.token ?? "").trim();
@@ -125,9 +184,9 @@ Deno.serve(async (req) => {
       });
       if (!hook.ok) return json({ error: "Не удалось подключить webhook: " + (hook.description ?? "") }, 400);
       await tg(token, "setMyDescription", {
-        description: "Напоминания о записях: пришлю сообщение за день и за 2 часа до визита. Подтвердить или отменить запись можно одной кнопкой.",
+        description: "Помощник салонов и студий: напоминаю о записях за день и за 2 часа, отвечаю на вопросы и помогаю записаться. Подтвердить или отменить запись можно одной кнопкой.",
       });
-      await tg(token, "setMyShortDescription", { short_description: "Напоминания о ваших записях" });
+      await tg(token, "setMyShortDescription", { short_description: "Напоминания о записях и ответы на вопросы" });
       const { error } = await sb.rpc("tg_save_bot", { p_token: token, p_username: me.result.username });
       if (error) throw error;
       return json({ ok: true, username: me.result.username });

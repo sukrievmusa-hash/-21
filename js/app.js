@@ -8,10 +8,10 @@ import { renderAuth, renderNewPassword } from './auth.js';
 
 const root = $('#root');
 const S = {
-  user: null, biz: null, settings: {}, staff: [], services: [], links: [], hours: [],
+  user: null, biz: null, settings: {}, plans: [], staff: [], services: [], links: [], hours: [],
   day: null, view: store.get('kezek_view', 'grid'), dayBookings: [],
 };
-const TABS = [['journal', 'Журнал'], ['clients', 'Клиенты'], ['services', 'Услуги'], ['staff', 'Сотрудники'], ['settings', 'Настройки'], ['billing', 'Подписка']];
+const TABS = [['journal', 'Журнал'], ['clients', 'Клиенты'], ['services', 'Услуги'], ['staff', 'Сотрудники'], ['ai', 'ИИ-ассистент'], ['settings', 'Настройки'], ['billing', 'Подписка']];
 const CATS = ['Барбершоп', 'Салон красоты', 'Ногтевая студия', 'Брови и ресницы', 'Массаж', 'Косметология', 'Репетитор / курсы',
   'Автомойка / детейлинг', 'Фото / видео студия', 'Медицина / стоматология', 'Психолог / консультант', 'Фитнес / тренер', 'Другое'];
 const TEMPLATES = {
@@ -37,6 +37,11 @@ const tz = () => S.biz.timezone;
 const bookUrl = () => pageUrl('book.html', { b: S.biz.slug });
 const activeStaff = () => S.staff.filter((s) => s.is_active);
 const capital = (s) => s.charAt(0).toUpperCase() + s.slice(1);
+const planOf = (code) => S.plans.find((p) => p.code === code) || { code, title: code, price: 0, staff_limit: 1, ai: false, ai_limit: 0 };
+const curPlan = () => planOf(S.biz.plan);
+async function fnErr(error) {
+  try { const j = await error.context.json(); return j.error || errMsg(error); } catch { return errMsg(error); }
+}
 
 // ---------- Запуск ----------
 let recovery = INITIAL_HASH.includes('type=recovery');
@@ -58,10 +63,12 @@ async function boot() {
   if (recovery) return renderNewPassword(root, afterRecovery);
   S.user = session.user;
   if (location.hash === '#signup') history.replaceState(null, '', location.pathname);
-  const [{ data: biz, error }, { data: settings }] = await Promise.all([
+  const [{ data: biz, error }, { data: settings }, { data: plans }] = await Promise.all([
     sb.from('businesses').select('*').eq('owner_id', S.user.id).maybeSingle(),
     sb.from('platform_settings').select('*').eq('id', 1).maybeSingle(),
+    sb.from('plans').select('*').order('sort'),
   ]);
+  S.plans = plans || [];
   if (error) { root.innerHTML = `<div class="empty">Ошибка загрузки: ${esc(errMsg(error))}<br><button class="btn" onclick="location.reload()">Обновить</button></div>`; return; }
   S.settings = settings || {};
   if (!biz) return renderOnboarding();
@@ -161,7 +168,7 @@ function route() {
   const tab = TABS.some(([k]) => k === t) ? t : 'journal';
   $$('.tab').forEach((a) => a.classList.toggle('active', a.dataset.t === tab));
   renderBanner();
-  const fn = { journal: renderJournal, clients: renderClients, services: renderServices, staff: renderStaff, settings: renderSettings, billing: renderBilling }[tab];
+  const fn = { journal: renderJournal, clients: renderClients, services: renderServices, staff: renderStaff, ai: renderAi, settings: renderSettings, billing: renderBilling }[tab];
   fn();
 }
 
@@ -622,15 +629,16 @@ function scheduleText(staffId) {
 }
 
 function renderStaff() {
-  const limit = S.biz.plan === 'start' ? 1 : 10;
+  const p = curPlan(), limit = p.staff_limit, n = activeStaff().length;
+  const bigger = S.plans.filter((x) => x.code !== 'trial' && x.staff_limit > limit).sort((a, b) => a.staff_limit - b.staff_limit)[0];
   $('#page').innerHTML = `<div class="page-h"><h2>Сотрудники</h2><button class="btn btn-pri" id="add">+ Сотрудник</button></div>
-    ${S.biz.plan === 'start' ? '<div class="alert alert-info" style="margin-bottom:12px">На тарифе «Старт» — 1 сотрудник. Для команды до 10 человек — тариф <a href="#billing">«Бизнес»</a>.</div>' : ''}
+    <div class="alert ${n >= limit ? 'alert-warn' : 'alert-info'}" style="margin-bottom:12px">Работают ${n} из ${limit} по тарифу «${esc(p.title)}».${n >= limit && bigger ? ` Нужно больше — тариф <a href="#billing">«${esc(bigger.title)}»</a> (до ${bigger.staff_limit}).` : ''}</div>
     <div id="list">${S.staff.map((s) => `<div class="list-item ${s.is_active ? '' : 'inactive'}" data-id="${s.id}">
       <span class="avatar">${esc(s.name[0]?.toUpperCase() || '?')}</span>
       <div class="grow"><b>${esc(s.name)}</b>${s.title ? ` <span class="muted">· ${esc(s.title)}</span>` : ''} ${s.is_active ? '' : '<span class="badge b-cancelled">не работает</span>'}
         <div class="muted small">${esc(scheduleText(s.id))}</div></div><span class="muted">›</span></div>`).join('') || '<div class="card empty">Сотрудников пока нет</div>'}</div>`;
   $('#add').onclick = () => {
-    if (activeStaff().length >= limit) return toastErr(`На вашем тарифе можно сотрудников: ${limit}. Перейдите на «Бизнес»`);
+    if (activeStaff().length >= limit) return toastErr(`На вашем тарифе можно сотрудников: ${limit}. Выберите тариф побольше в разделе «Подписка»`);
     staffModal(null);
   };
   $$('.list-item', $('#list')).forEach((el) => { el.onclick = () => staffModal(S.staff.find((s) => s.id === el.dataset.id)); });
@@ -848,37 +856,198 @@ function renderSettings() {
   }
 }
 
+// ---------- ИИ-ассистент ----------
+const KB_TEMPLATE = `Как к нам добраться: …
+Парковка: …
+Как оплатить: наличные, Kaspi QR, перевод
+Предоплата: не нужна / нужна …
+Опоздание: ждём до 15 минут, потом запись может сдвинуться
+Отмена и перенос: предупредите минимум за … часов
+Что взять с собой / как подготовиться: …
+Гарантия: …
+Акции и скидки: …
+Частые вопросы клиентов: …`;
+
+async function renderAi() {
+  const page = $('#page');
+  page.innerHTML = '<div class="page-h"><h2>ИИ-ассистент</h2></div><div class="spinner"></div>';
+  const { data: info, error } = await sb.rpc('owner_ai_info');
+  if (error) { page.innerHTML = `<div class="alert alert-danger">${esc(errMsg(error))}</div>`; return; }
+  if (location.hash.slice(1) !== 'ai') return;
+  const a = info.settings, bot = info.bot_username;
+  const chatLink = bot ? `https://t.me/${bot}?start=s_${S.biz.slug}` : '';
+  const aiPlans = S.plans.filter((p) => p.ai && p.code !== 'trial' && p.price > 0);
+  const pct = info.limit ? Math.min(100, Math.round((info.used / info.limit) * 100)) : 0;
+  let status;
+  if (!info.plan_ai) status = `<div class="alert alert-warn">ИИ-ассистент работает на тарифе ${aiPlans.map((p) => `«${esc(p.title)}» (${money(p.price)}/мес)`).join(' или ') || 'с ИИ'}. Заполнить базу знаний можно уже сейчас — после смены тарифа ассистент сразу начнёт отвечать. <a href="#billing"><b>Сменить тариф</b></a></div>`;
+  else if (!info.platform_ready) status = '<div class="alert alert-warn">ИИ ещё подключается администратором платформы. Заполните базу знаний — ассистент заработает автоматически.</div>';
+  else if (!a.enabled) status = '<div class="alert alert-info">Ассистент выключен. Включите его ниже — и он начнёт отвечать клиентам в Telegram.</div>';
+  else status = `<div class="alert alert-ok">✅ Ассистент <b>${esc(a.bot_name)}</b> отвечает клиентам 24/7 в Telegram${bot ? ` (@${esc(bot)})` : ''}.</div>`;
+
+  page.innerHTML = `<div class="page-h"><h2>ИИ-ассистент</h2></div>
+    <div class="card stack">${status}
+      ${info.plan_ai ? `<div><div class="row between small"><span>Ответов в этом месяце: <b>${info.used}</b> из ${info.limit}</span><span class="muted">диалогов: ${info.chats}</span></div>
+        <div style="height:8px;background:var(--line);border-radius:99px;overflow:hidden;margin-top:6px"><div style="height:100%;width:${pct}%;background:${pct > 90 ? 'var(--danger)' : 'var(--pri)'}"></div></div></div>` : ''}
+      <div class="small muted">Как это работает: клиент пишет боту → ассистент отвечает по вашим услугам, ценам, графику и базе знаний, подбирает свободное время и записывает. Если не знает ответа — пересылает вопрос вам в Telegram, вы отвечаете кнопкой «Ответить».</div>
+      ${chatLink ? `<div><b>Ссылка на чат с ассистентом</b> — поставьте в Instagram, 2GIS и WhatsApp:
+        <div class="link-box" style="margin-top:6px"><input class="input grow" readonly value="${esc(chatLink)}"><button class="btn" id="cpChat">Скопировать</button></div>
+        <div class="muted small">На вашей странице записи тоже появится кнопка «Задать вопрос».</div></div>` : ''}
+    </div>
+
+    <div class="card"><h3>Настройки и база знаний</h3>
+      <form id="aif" class="stack" novalidate>
+        <label class="check"><input type="checkbox" name="enabled" ${a.enabled ? 'checked' : ''}><span><b>Ассистент отвечает клиентам</b></span></label>
+        <div class="form-grid">
+          <label class="field"><span>Имя ассистента</span><input class="input" name="bot_name" maxlength="40" value="${esc(a.bot_name)}"></label>
+          <div class="field"><span>Запись клиентов</span><label class="check"><input type="checkbox" name="can_book" ${a.can_book ? 'checked' : ''}><span>Ассистент может сам записывать</span></label></div>
+        </div>
+        <label class="field"><span>База знаний — всё, что должен знать ассистент</span>
+          <textarea class="textarea" name="knowledge" rows="12" maxlength="15000" placeholder="Например:&#10;Парковка: бесплатная во дворе&#10;Оплата: наличные и Kaspi QR&#10;Опоздание больше 15 минут — запись переносится">${esc(a.knowledge)}</textarea>
+          <small><span id="kbn">${a.knowledge.length}</span> / 15000 · Услуги, цены, адрес и график ассистент уже знает — их писать не нужно. Добавлять факты можно и из Telegram: напишите боту «Запомни: …»</small></label>
+        <div><button type="button" class="btn btn-sm btn-ghost" id="kbTpl">Вставить шаблон вопросов</button></div>
+        <label class="field"><span>Особые указания <span class="muted">(необязательно)</span></span>
+          <textarea class="textarea" name="instructions" rows="3" maxlength="2000" placeholder="Например: обращайся на «вы», предлагай мастера Айгерим новым клиентам, не обещай скидки">${esc(a.instructions)}</textarea></label>
+        <div><button class="btn btn-pri" type="submit">Сохранить</button></div>
+      </form></div>
+
+    <div class="card"><div class="row between"><h3 style="margin:0">Проверить ассистента</h3><button class="btn btn-sm btn-ghost" id="tReset">Начать заново</button></div>
+      <p class="muted small">Напишите как клиент. В проверке запись не создаётся. Сначала сохраните изменения базы знаний.</p>
+      <div class="chat" id="tChat"><div class="muted small center">Например: «Сколько стоит и когда есть время в субботу?»</div></div>
+      <form class="link-box" id="tForm" style="margin-top:10px"><input class="input grow" id="tIn" maxlength="2000" placeholder="Сообщение…" autocomplete="off"><button class="btn btn-pri">Отправить</button></form></div>
+
+    <div class="card"><h3>Диалоги с клиентами</h3><div id="dlg"><div class="spinner"></div></div></div>`;
+
+  if (chatLink) $('#cpChat').onclick = () => copyText(chatLink);
+  const f = $('#aif');
+  f.knowledge.oninput = () => { $('#kbn').textContent = f.knowledge.value.length; };
+  $('#kbTpl').onclick = () => { f.knowledge.value = (f.knowledge.value.trim() ? f.knowledge.value.trim() + '\n\n' : '') + KB_TEMPLATE; f.knowledge.oninput(); f.knowledge.focus(); };
+  f.onsubmit = async (e) => {
+    e.preventDefault();
+    const patch = {
+      enabled: f.enabled.checked, bot_name: f.bot_name.value.trim() || 'Ассистент', can_book: f.can_book.checked,
+      knowledge: f.knowledge.value.trim(), instructions: f.instructions.value.trim(), updated_at: new Date().toISOString(),
+    };
+    await busy($('button[type=submit]', f), async () => {
+      const { error: e2 } = await sb.from('business_ai').update(patch).eq('business_id', S.biz.id);
+      if (e2) return toastErr(e2);
+      toast('Сохранено'); renderAi();
+    });
+  };
+
+  let reset = true;
+  const chat = $('#tChat');
+  const bubble = (role, text) => {
+    if (reset && chat.querySelector('.muted')) chat.innerHTML = '';
+    const el = document.createElement('div');
+    el.className = 'msg ' + role; el.textContent = text;
+    chat.append(el); chat.scrollTop = chat.scrollHeight;
+    return el;
+  };
+  $('#tReset').onclick = () => { reset = true; chat.innerHTML = '<div class="muted small center">Диалог очищен</div>'; };
+  $('#tForm').onsubmit = async (e) => {
+    e.preventDefault();
+    const text = $('#tIn').value.trim();
+    if (!text) return;
+    if (!info.plan_ai) return toastErr('Проверка доступна на тарифе с ИИ');
+    if (!info.platform_ready) return toastErr('ИИ ещё не подключён администратором платформы');
+    bubble('user', text); $('#tIn').value = '';
+    const wait = bubble('assistant', '…печатает');
+    const btn = $('button', e.target);
+    await busy(btn, async () => {
+      const { data, error: e3 } = await sb.functions.invoke('tg', { body: { action: 'ai_test', text, reset } });
+      if (e3) { wait.remove(); return toastErr(await fnErr(e3)); }
+      reset = false;
+      wait.textContent = data.reply + (data.booked ? '\n\n(в реальном чате клиент был бы записан)' : '') + (data.handoff ? '\n\n(в реальном чате вопрос ушёл бы вам в Telegram)' : '');
+      chat.scrollTop = chat.scrollHeight;
+    });
+  };
+  loadDialogs();
+
+  async function loadDialogs() {
+    const { data, error: e4 } = await sb.rpc('owner_ai_dialogs');
+    const box = $('#dlg');
+    if (!box) return;
+    if (e4) { box.innerHTML = `<div class="muted">${esc(errMsg(e4))}</div>`; return; }
+    if (!data.length) { box.innerHTML = '<p class="muted">Пока никто не писал. Поделитесь ссылкой на чат с клиентами.</p>'; return; }
+    box.innerHTML = data.map((d) => `<div class="list-item" data-c="${d.chat_id}"><span class="avatar">${esc((d.client_name || d.tg_name || '?')[0].toUpperCase())}</span>
+      <div class="grow"><b>${esc(d.client_name || d.tg_name || 'Клиент')}</b>${d.tg_username ? ` <span class="muted small">@${esc(d.tg_username)}</span>` : ''}${d.muted ? ' <span class="badge b-booked">отвечаете вы</span>' : ''}
+        <div class="muted small" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:520px">${esc(d.last_text || '')}</div></div>
+      <span class="muted small nowrap">${fmtDateShort(d.last_at, tz())}</span></div>`).join('');
+    $$('[data-c]', box).forEach((el) => { el.onclick = () => dialogModal(data.find((d) => String(d.chat_id) === el.dataset.c)); });
+  }
+
+  async function dialogModal(d) {
+    const m = modal({
+      title: d.client_name || d.tg_name || 'Клиент', wide: true,
+      body: `<div class="chat" id="dChat" style="max-height:50vh"><div class="spinner"></div></div>
+        <form class="link-box" id="dForm" style="margin-top:10px"><input class="input grow" id="dIn" maxlength="3500" placeholder="Ответить клиенту от имени бизнеса…"><button class="btn btn-pri">Отправить</button></form>
+        <p class="muted small" style="margin:6px 0 0">После вашего ответа ассистент не вмешивается в этот диалог 3 часа.</p>`,
+      footer: `${d.muted ? '<button class="btn" data-a="un">Вернуть ассистента</button>' : ''}${d.tg_username ? `<a class="btn" target="_blank" rel="noopener" href="https://t.me/${esc(d.tg_username)}">Открыть в Telegram</a>` : ''}`,
+    });
+    const load = async () => {
+      const { data } = await sb.rpc('owner_ai_messages', { p_chat: d.chat_id });
+      const box = $('#dChat', m.el);
+      box.innerHTML = (data || []).map((x) => `<div class="msg ${x.role}"><div>${esc(x.content)}</div><div class="t">${x.role === 'owner' ? 'вы · ' : x.role === 'assistant' ? 'ассистент · ' : ''}${fmtDateShort(x.at, tz())} ${timeStrInTz(x.at, tz())}</div></div>`).join('');
+      box.scrollTop = box.scrollHeight;
+    };
+    await load();
+    const un = $('[data-a=un]', m.el);
+    if (un) un.onclick = async () => { await sb.rpc('owner_ai_unmute', { p_chat: d.chat_id }); toast('Ассистент снова отвечает'); un.remove(); loadDialogs(); };
+    $('#dForm', m.el).onsubmit = async (e) => {
+      e.preventDefault();
+      const text = $('#dIn', m.el).value.trim();
+      if (!text) return;
+      await busy($('button', e.target), async () => {
+        const { error: e5 } = await sb.rpc('owner_ai_reply', { p_chat: d.chat_id, p_text: text });
+        if (e5) return toastErr(e5);
+        $('#dIn', m.el).value = ''; toast('Отправлено'); await load(); loadDialogs();
+      });
+    };
+  }
+}
+
 // ---------- Подписка ----------
 async function renderBilling() {
   const b = S.biz, s = S.settings;
   const d = daysLeft();
   const until = fmtDateShort(b.paid_until, tz());
-  const planTitle = { trial: 'Пробный период', start: 'Старт', business: 'Бизнес' }[b.plan];
-  const state = { plan: b.plan === 'start' ? 'start' : 'business', months: 1 };
+  const cur = curPlan();
+  const payable = S.plans.filter((p) => p.code !== 'trial' && p.is_active && p.price > 0);
+  const n = activeStaff().length;
+  const fits = payable.filter((p) => p.staff_limit >= n);
+  const state = {
+    plan: payable.some((p) => p.code === b.plan) ? b.plan : (fits.find((p) => p.code === 'business') || fits[0] || payable[0])?.code,
+    months: 1,
+  };
+  const feats = (p) => (p.features || '').split('\n').map((x) => x.trim()).filter(Boolean);
   $('#page').innerHTML = `<div class="page-h"><h2>Подписка</h2></div>
-    <div class="card"><div class="row between"><div><div class="muted small">Текущий тариф</div><h3 style="margin:2px 0">${planTitle}</h3>
-      <div class="${d <= 0 ? '' : 'muted'}">${d > 0 ? `Активен до ${until} · осталось ${d} ${plural(d, 'день', 'дня', 'дней')}` : `<b style="color:var(--danger)">Закончился ${until}</b> — онлайн-запись отключена`}</div></div></div></div>
+    <div class="card"><div class="row between"><div><div class="muted small">Текущий тариф</div><h3 style="margin:2px 0">${esc(b.plan === 'trial' ? 'Пробный период' : cur.title)}</h3>
+      <div class="${d <= 0 ? '' : 'muted'}">${d > 0 ? `Активен до ${until} · осталось ${d} ${plural(d, 'день', 'дня', 'дней')}` : `<b style="color:var(--danger)">Закончился ${until}</b> — онлайн-запись отключена`}</div>
+      <div class="muted small">Сотрудников: до ${cur.staff_limit}${cur.ai ? ` · ИИ-ассистент: до ${cur.ai_limit} ответов в месяц` : ''}</div></div></div></div>
 
     <div class="card"><h3>Продлить или сменить тариф</h3>
-      <div class="grid grid-2" id="plans">
-        <div class="plan" data-p="start"><b>Старт</b><div class="price">${money(s.price_start)}<span class="muted small"> / мес</span></div>
-          <ul><li>1 сотрудник</li><li>Онлайн-запись и журнал</li><li>Напоминания в Telegram</li><li>База клиентов</li></ul></div>
-        <div class="plan" data-p="business"><b>Бизнес</b><div class="price">${money(s.price_business)}<span class="muted small"> / мес</span></div>
-          <ul><li>До 10 сотрудников</li><li>Всё из «Старт»</li><li>Графики по мастерам</li><li>Статистика по команде</li></ul></div>
+      ${payable.length ? `<div class="grid grid-${payable.length === 4 ? 2 : Math.min(payable.length, 3)}" id="plans">
+        ${payable.map((p) => `<div class="plan" data-p="${esc(p.code)}">${p.ai ? '<span class="badge b-booked" style="position:absolute;top:12px;right:12px">ИИ</span>' : ''}<b>${esc(p.title)}</b>
+          <div class="price">${money(p.price)}<span class="muted small"> / мес</span></div>
+          <ul>${feats(p).map((f) => `<li>${esc(f)}</li>`).join('') || `<li>До ${p.staff_limit} сотрудников</li>`}</ul>
+          ${p.staff_limit < n ? `<div class="small" style="color:var(--danger);margin-top:6px">У вас ${n} сотрудников — сначала отключите лишних</div>` : ''}</div>`).join('')}
       </div>
       <div class="row" style="margin:14px 0"><span class="muted">Срок:</span><div class="row" id="months">
         ${[[1, '1 мес'], [3, '3 мес'], [6, '6 мес'], [12, '12 мес (−2 мес)']].map(([v, t]) => `<button type="button" class="btn btn-sm" data-m="${v}">${t}</button>`).join('')}</div></div>
-      <div class="alert alert-info stack" id="pay"></div>
+      <div class="alert alert-info stack" id="pay"></div>` : '<p class="muted">Тарифы скоро появятся.</p>'}
+      <p class="muted small" style="margin:12px 0 0">Нужно больше сотрудников или особые условия?${s.support_contact ? ` Напишите нам: <b>${esc(s.support_contact)}</b>` : ' Напишите в поддержку.'} Сделаем индивидуальный тариф.</p>
     </div>
     <div class="card"><h3>История оплат</h3><div id="hist"><div class="spinner"></div></div></div>`;
 
-  const calc = () => (state.plan === 'start' ? s.price_start : s.price_business) * (state.months === 12 ? 10 : state.months);
+  const planObj = () => planOf(state.plan);
+  const calc = () => planObj().price * (state.months === 12 ? 10 : state.months);
   const draw = () => {
+    if (!state.plan) return;
     $$('.plan').forEach((p) => p.classList.toggle('sel', p.dataset.p === state.plan));
     $$('#months [data-m]').forEach((x) => x.classList.toggle('btn-pri', +x.dataset.m === state.months));
     const amount = calc();
     $('#pay').innerHTML = s.kaspi_details
-      ? `<div><b>К оплате: ${money(amount)}</b> — тариф «${state.plan === 'start' ? 'Старт' : 'Бизнес'}» на ${state.months} мес.</div>
+      ? `<div><b>К оплате: ${money(amount)}</b> — тариф «${esc(planObj().title)}» на ${state.months} мес.</div>
         <div><div class="small muted">Переведите через Kaspi:</div><div class="pre" style="font-weight:600">${esc(s.kaspi_details)}</div></div>
         <button type="button" class="btn btn-pri" id="openKaspi">Оплатить в Kaspi · ${money(amount)}</button>
         <div class="small muted">Кнопка скопирует номер и откроет приложение Kaspi. Выберите «Переводы», вставьте номер и введите сумму ${money(amount)}.</div>
@@ -896,6 +1065,7 @@ async function renderBilling() {
     };
     const paid = $('#paid');
     if (paid) paid.onclick = async () => {
+      if (planObj().staff_limit < activeStaff().length) return toastErr(`На тарифе «${planObj().title}» до ${planObj().staff_limit} сотрудников, а у вас ${activeStaff().length}. Выберите другой тариф или отключите лишних сотрудников`);
       const note = $('#payer').value.trim();
       if (note.length < 2) return toastErr('Укажите имя отправителя — так мы найдём перевод');
       await busy(paid, async () => {
@@ -917,7 +1087,7 @@ async function renderBilling() {
     if (!box) return;
     const st = { pending: 'проверяется', approved: 'подтверждена', rejected: 'не найдена' };
     box.innerHTML = !data?.length ? '<p class="muted">Оплат пока не было</p>' : `<div class="table-wrap"><table class="table"><thead><tr><th>Дата</th><th>Тариф</th><th>Сумма</th><th>Статус</th></tr></thead><tbody>
-      ${data.map((p) => `<tr><td class="nowrap">${fmtDateShort(p.created_at, tz())}</td><td>${p.plan === 'start' ? 'Старт' : 'Бизнес'}, ${p.months} мес</td><td class="nowrap">${money(p.amount)}</td><td><span class="badge b-${p.status}">${st[p.status]}</span></td></tr>`).join('')}</tbody></table></div>`;
+      ${data.map((p) => `<tr><td class="nowrap">${fmtDateShort(p.created_at, tz())}</td><td>${esc(planOf(p.plan).title)}, ${p.months} мес</td><td class="nowrap">${money(p.amount)}</td><td><span class="badge b-${p.status}">${st[p.status]}</span></td></tr>`).join('')}</tbody></table></div>`;
     if (data?.some((p) => p.status === 'approved' && new Date(p.processed_at) > new Date(Date.now() - 600000))) { await reloadBiz(); renderBanner(); }
   }
 }
