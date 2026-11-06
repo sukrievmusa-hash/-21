@@ -10,8 +10,10 @@ declare
   v_biz uuid; v_staff uuid; v_svc uuid; v_day date; v_slot timestamptz; v_tok text; v_tok2 text;
   v_txt text; v_n int; v_j jsonb; v_pay uuid; v_code text; v_until timestamptz;
   v_slug text := 'selftest-' || substr(md5(random()::text), 1, 6);
+  v_key text;
 
 begin
+  perform set_config('app.no_send', '1', true);  -- тест не отправляет настоящие сообщения в Telegram
   insert into auth.users (id, instance_id, aud, role, email, encrypted_password, email_confirmed_at,
                           raw_app_meta_data, raw_user_meta_data, created_at, updated_at)
   select x, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated',
@@ -105,6 +107,47 @@ begin
     select status into v_txt from public.bookings where token = v_tok;
     step := 'клиент подтвердил визит кнопкой'; ok := v_txt = 'confirmed'; info := v_txt; return next;
 
+    -- 4б. вопросы клиентов и ИИ-ассистент
+    v_j := public.tg_route_text(111111, 'Сколько стоит стрижка?', 'Клиент Тест', null);
+    select count(*) into v_n from public.notifications where business_id = v_biz and kind = 'owner_question';
+    step := 'без ИИ вопрос клиента уходит владельцу'; ok := v_j->>'mode' = 'reply' and v_n = 1; info := v_j->>'text'; return next;
+    v_j := public.tg_route_text(222222, 'Запомни: парковка бесплатная во дворе', 'Владелец', null);
+    select knowledge into v_txt from public.business_ai where business_id = v_biz;
+    step := 'владелец учит ассистента «Запомни: …»'; ok := v_txt like '%парковка бесплатная%'; info := v_txt; return next;
+    v_j := public.tg_handle_callback(999999, 'r:111111');
+    step := 'чужой чат не может ответить клиенту'; ok := v_j->>'answer' like '%другим%'; info := null; return next;
+    perform public.tg_handle_callback(222222, 'r:111111');
+    v_j := public.tg_route_text(222222, 'Стрижка 5000 ₸', 'Владелец', null);
+    select count(*) into v_n from public.ai_messages where business_id = v_biz and chat_id = 111111 and role = 'owner';
+    step := 'владелец ответил клиенту кнопкой «Ответить»'; ok := v_n = 1 and v_j->>'text' like '%Отправлено%'; info := null; return next;
+    v_j := public.tg_route_text(111111, 'Спасибо', 'Клиент Тест', null);
+    step := 'пока отвечает владелец, ассистент молчит'; ok := v_j->>'mode' = 'silent'; info := null; return next;
+    perform public.tg_handle_callback(222222, 'a:111111');
+    perform set_config('role', 'none', true);
+    update public.business_ai set enabled = true where business_id = v_biz;
+    select ai_api_key into v_key from private.secrets where id = 1;
+    update private.secrets set ai_api_key = coalesce(v_key, 'sk-ant-selftest') where id = 1;
+    perform set_config('role', 'service_role', true);
+    v_j := public.tg_route_text(111111, 'Есть время в понедельник?', 'Клиент Тест', null);
+    perform set_config('role', 'none', true);
+    update private.secrets set ai_api_key = v_key where id = 1;
+    perform set_config('role', 'service_role', true);
+    step := 'с ИИ вопрос идёт ассистенту'; ok := v_j->>'mode' = 'ai'; info := v_j::text; return next;
+    v_j := public.ai_context(v_biz, 111111);
+    step := 'ассистент видит услуги, базу знаний и историю';
+    ok := jsonb_array_length(v_j->'services') = 1 and v_j->'ai'->>'knowledge' like '%парковка%' and jsonb_array_length(v_j->'history') >= 4;
+    info := jsonb_array_length(v_j->'history') || ' сообщений в истории'; return next;
+    v_j := public.ai_book(v_biz, 111111, v_svc, to_char(v_day, 'YYYY-MM-DD') || ' 15:00', 'Клиент Тест', '+77011112233');
+    select count(*) into v_n from public.bookings where token = v_j->>'token' and tg_chat_id = 111111 and status = 'booked';
+    step := 'ассистент записал клиента'; ok := v_n = 1; info := v_j->>'when'; return next;
+    begin
+      perform public.ai_book(v_biz, 111111, v_svc, to_char(v_day, 'YYYY-MM-DD') || ' 15:30', 'Клиент Тест', '+77011112233');
+      step := 'ассистент не записывает на занятое время'; ok := false; info := 'прошло'; return next;
+    exception when others then
+      step := 'ассистент не записывает на занятое время'; ok := true; info := sqlerrm; return next;
+    end;
+    step := 'тариф «Сеть» — 30 сотрудников'; ok := private.plan_staff_limit('network') = 30; info := null; return next;
+
     -- 5. напоминание за сутки
     perform set_config('role', 'none', true);
     insert into public.bookings (business_id, staff_id, service_id, starts_at, client_name, client_phone, source)
@@ -159,7 +202,7 @@ begin
     -- 9. оплата и продление
     v_j := public.request_payment('business', 3, 'Муса Ш.');
     v_pay := (v_j->>'id')::uuid;
-    step := 'заявка на оплату'; ok := (v_j->>'amount')::int = 3 * (select price_business from public.platform_settings); info := v_j->>'amount'; return next;
+    step := 'заявка на оплату'; ok := (v_j->>'amount')::int = 3 * (select price from public.plans where code = 'business'); info := v_j->>'amount'; return next;
     begin
       perform public.claim_admin('неверный-код');
       step := 'чужой код админа не подходит'; ok := false; info := 'прошло'; return next;
@@ -196,6 +239,7 @@ begin
 
   -- уборка
   perform set_config('role', 'none', true);
+  update private.secrets set ai_api_key = null where ai_api_key = 'sk-ant-selftest';
   delete from public.notifications where business_id = v_biz;
   delete from public.businesses where owner_id in (u1, u2, ua);
   delete from auth.users where id in (u1, u2, ua);
