@@ -141,10 +141,10 @@
       g.className = 'grid ' + (n >= 4 ? 'grid-4' : n === 3 ? 'grid-3' : 'grid-2');
       g.style.maxWidth = n >= 4 ? '1180px' : n === 3 ? '1040px' : '820px';
       const hl = data.find((p) => p.code === 'business') || data[Math.min(1, n - 1)];
-      g.innerHTML = data.map((p) => `<div class="card price-card ${p === hl ? 'hl' : ''}">${p === hl ? '<span class="tag">Популярный</span>' : p.ai ? '<span class="tag" style="background:#7c3aed">С ИИ</span>' : ''}
+      g.innerHTML = data.map((p, i) => `<div class="card price-card ${p === hl ? 'hl' : ''}">${p === hl ? '<span class="tag">Популярный</span>' : p.ai ? '<span class="tag" style="background:#7c3aed">С ИИ</span>' : ''}
         <h3>${esc(p.title)}</h3><div class="price"><span style="font-size:${n >= 4 ? 30 : 38}px">${money(p.price)}</span><span class="muted small" style="font-size:16px"> / мес</span></div>
         <ul>${(p.features || 'До ' + p.staff_limit + ' сотрудников').split('\n').filter((x) => x.trim()).map((f) => `<li>${esc(f.trim())}</li>`).join('')}</ul>
-        <a class="btn ${p === hl ? 'btn-pri' : ''} btn-block" href="app.html#signup">Начать бесплатно</a></div>`).join('');
+        ${n >= 4 && i >= n - 2 ? '' : `<a class="btn ${p === hl ? 'btn-pri' : ''} btn-block" href="app.html#signup">Начать бесплатно</a>`}</div>`).join('');
     });
   </script>
 </body>
