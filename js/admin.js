@@ -1,4 +1,4 @@
-import { sb, $, $$, esc, money, toast, toastErr, errMsg, modal, confirmDlg, busy, fmtDateShort, pageUrl, BRAND, INITIAL_HASH } from './lib.js';
+import { sb, $, $$, esc, money, toast, toastErr, errMsg, modal, confirmDlg, busy, fmtDateShort, pageUrl, copyText, waLink, normPhone, BRAND, INITIAL_HASH } from './lib.js';
 import { renderAuth, renderNewPassword } from './auth.js';
 
 const root = $('#root');
@@ -143,8 +143,25 @@ function editBiz(b) {
         <label class="field"><span>Оплачено до</span><input class="input" type="date" id="pu" value="${d}"></label></div>
       <div class="row">${[[7, '+7 дней'], [30, '+1 мес'], [90, '+3 мес'], [365, '+1 год']].map(([n, t]) => `<button type="button" class="btn btn-sm" data-add="${n}">${t}</button>`).join('')}</div>
       <label class="check"><input type="checkbox" id="bl" ${b.is_blocked ? 'checked' : ''}><span>Заблокировать (запись и напоминания остановятся)</span></label></div>`,
-    footer: '<button class="btn" data-a="c">Отмена</button><button class="btn btn-pri" data-a="s">Сохранить</button>',
+    footer: `${b.email ? '<button class="btn" data-a="pw">Новый пароль владельцу</button>' : ''}<button class="btn" data-a="c">Отмена</button><button class="btn btn-pri" data-a="s">Сохранить</button>`,
   });
+  const pwBtn = $('[data-a=pw]', m.el);
+  if (pwBtn) pwBtn.onclick = async () => {
+    if (!(await confirmDlg(`Сбросить пароль владельцу «${b.name}» (${b.email})? Старый пароль перестанет работать.`, 'Сбросить', true))) return;
+    const { data, error } = await sb.functions.invoke('account', { body: { action: 'reset_password', business_id: b.id } });
+    if (error) {
+      let msg = errMsg(error);
+      try { msg = (await error.context.json()).error || msg; } catch { /* без тела */ }
+      return toastErr(msg);
+    }
+    const text = `Здравствуйте! Новый пароль для входа в ${BRAND}: ${data.password}\nEmail: ${b.email}\nВход: ${pageUrl('app.html')}\nПосле входа смените пароль в «Настройки → Аккаунт».`;
+    const pm = modal({
+      title: 'Новый пароль',
+      body: `<p>Email: <b>${esc(b.email)}</b><br>Пароль: <b style="font-size:20px;letter-spacing:.05em">${esc(data.password)}</b></p><p class="muted small">Отправьте его владельцу. Он сможет сменить пароль в кабинете.</p>`,
+      footer: `<button class="btn" id="pwCopy">Скопировать сообщение</button>${normPhone(b.phone) ? `<a class="btn btn-wa" target="_blank" rel="noopener" href="${esc(waLink(b.phone, text))}">Отправить в WhatsApp</a>` : ''}`,
+    });
+    $('#pwCopy', pm.el).onclick = () => copyText(text);
+  };
   $$('[data-add]', m.el).forEach((x) => {
     x.onclick = () => {
       const base = new Date(Math.max(Date.now(), new Date($('#pu', m.el).value).getTime() || 0));
