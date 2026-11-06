@@ -1015,6 +1015,8 @@ async function renderBilling() {
   const payable = S.plans.filter((p) => p.code !== 'trial' && p.is_active && p.price > 0);
   const n = activeStaff().length;
   const fits = payable.filter((p) => p.staff_limit >= n);
+  const { data: offers } = await sb.rpc('my_trial_offers');
+  const trialOf = (p) => (offers || []).includes(p.code) && p.trial_price != null && p.trial_days ? p : null;
   const state = {
     plan: payable.some((p) => p.code === b.plan) ? b.plan : (fits.find((p) => p.code === 'business') || fits[0] || payable[0])?.code,
     months: 1,
@@ -1028,7 +1030,7 @@ async function renderBilling() {
     <div class="card"><h3>Продлить или сменить тариф</h3>
       ${payable.length ? `<div class="grid grid-${payable.length === 4 ? 2 : Math.min(payable.length, 3)}" id="plans">
         ${payable.map((p) => `<div class="plan" data-p="${esc(p.code)}">${p.ai ? '<span class="badge b-booked" style="position:absolute;top:12px;right:12px">ИИ</span>' : ''}<b>${esc(p.title)}</b>
-          <div class="price">${money(p.price)}<span class="muted small"> / мес</span></div>
+          ${trialOf(p) ? `<div class="muted small" style="text-decoration:line-through">${money(p.price)} / мес</div><div class="price">${money(p.trial_price)}<span class="muted small"> за ${p.trial_days} дн.</span></div><div class="small" style="color:#16a34a;font-weight:600">Пробный период, потом ${money(p.price)} / мес</div>` : `<div class="price">${money(p.price)}<span class="muted small"> / мес</span></div>`}
           <ul>${feats(p).map((f) => `<li>${esc(f)}</li>`).join('') || `<li>До ${p.staff_limit} сотрудников</li>`}</ul>
           ${p.staff_limit < n ? `<div class="small" style="color:var(--danger);margin-top:6px">У вас ${n} сотрудников — сначала отключите лишних</div>` : ''}</div>`).join('')}
       </div>
@@ -1040,14 +1042,15 @@ async function renderBilling() {
     <div class="card"><h3>История оплат</h3><div id="hist"><div class="spinner"></div></div></div>`;
 
   const planObj = () => planOf(state.plan);
-  const calc = () => planObj().price * (state.months === 12 ? 10 : state.months);
+  const isTrial = () => state.months === 1 && !!trialOf(planObj());
+  const calc = () => isTrial() ? planObj().trial_price : planObj().price * (state.months === 12 ? 10 : state.months);
   const draw = () => {
     if (!state.plan) return;
     $$('.plan').forEach((p) => p.classList.toggle('sel', p.dataset.p === state.plan));
     $$('#months [data-m]').forEach((x) => x.classList.toggle('btn-pri', +x.dataset.m === state.months));
     const amount = calc();
     $('#pay').innerHTML = s.kaspi_details
-      ? `<div><b>К оплате: ${money(amount)}</b> — тариф «${esc(planObj().title)}» на ${state.months} мес.</div>
+      ? `<div><b>К оплате: ${money(amount)}</b> — тариф «${esc(planObj().title)}» ${isTrial() ? `на пробный период ${planObj().trial_days} дн. (потом ${money(planObj().price)} / мес)` : `на ${state.months} мес.`}</div>
         <div><div class="small muted">Переведите через Kaspi:</div><div class="pre" style="font-weight:600">${esc(s.kaspi_details)}</div></div>
         <button type="button" class="btn btn-pri" id="openKaspi">Оплатить в Kaspi · ${money(amount)}</button>
         <div class="small muted">Кнопка скопирует номер и откроет приложение Kaspi. Выберите «Переводы», вставьте номер и введите сумму ${money(amount)}.</div>

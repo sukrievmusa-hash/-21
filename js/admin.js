@@ -190,10 +190,10 @@ async function plans() {
   await loadPlans();
   const page = $('#page');
   page.innerHTML = `<div class="page-h"><h2>Тарифы</h2><button class="btn btn-pri" id="add">+ Тариф</button></div>
-    <p class="muted small">Цены, лимиты и пункты меняются сразу на сайте и в кабинетах. <b>Скрытый</b> тариф не виден на сайте — назначьте его конкретному бизнесу в «Бизнесы» для индивидуальных условий (например, 50 мастеров по особой цене). Уже оплаченные заявки не меняются.</p>
-    <div class="card" style="padding:0"><div class="table-wrap"><table class="table"><thead><tr><th>Тариф</th><th>Цена / мес</th><th>Сотрудников</th><th>ИИ</th><th>Виден</th><th></th></tr></thead><tbody>
+    <p class="muted small">Цены, пробные периоды, лимиты и пункты меняются сразу на сайте и в кабинетах. <b>Скрытый</b> тариф не виден на сайте — назначьте его конкретному бизнесу в «Бизнесы» для индивидуальных условий (например, 50 мастеров по особой цене). Уже оплаченные заявки не меняются.</p>
+    <div class="card" style="padding:0"><div class="table-wrap"><table class="table"><thead><tr><th>Тариф</th><th>Цена / мес</th><th>Пробный</th><th>Сотрудников</th><th>ИИ</th><th>Виден</th><th></th></tr></thead><tbody>
     ${PLANS.map((p) => `<tr class="clickable" data-c="${esc(p.code)}"><td><b>${esc(p.title)}</b> <span class="muted small">${esc(p.code)}</span>${p.is_active ? '' : ' <span class="badge b-cancelled">архив</span>'}</td>
-      <td class="nowrap">${p.code === 'trial' ? 'бесплатно' : money(p.price)}</td><td>до ${p.staff_limit}</td><td>${p.ai ? `✅ до ${p.ai_limit} отв.` : '—'}</td>
+      <td class="nowrap">${p.code === 'trial' ? 'бесплатно' : money(p.price)}</td><td class="nowrap">${p.code === 'trial' ? 'бесплатный (см. Настройки)' : p.trial_price != null && p.trial_days ? `${money(p.trial_price)} / ${p.trial_days} дн.` : '—'}</td><td>до ${p.staff_limit}</td><td>${p.ai ? `✅ до ${p.ai_limit} отв.` : '—'}</td>
       <td>${p.code === 'trial' ? 'пробный' : p.is_public ? 'всем' : 'скрытый'}</td><td class="muted">›</td></tr>`).join('')}</tbody></table></div></div>`;
   $('#add').onclick = () => planModal(null);
   $$('tr[data-c]').forEach((tr) => { tr.onclick = () => planModal(PLANS.find((p) => p.code === tr.dataset.c)); });
@@ -207,7 +207,9 @@ function planModal(p) {
     body: `<form id="pf" class="form-grid" novalidate>
       <label class="field"><span>Название</span><input class="input" name="title" maxlength="40" value="${esc(p.title)}" placeholder="Например: Сеть 50"></label>
       <label class="field"><span>Код (латиница)</span><input class="input" name="code" maxlength="30" value="${esc(p.code)}" ${isNew ? '' : 'disabled'} placeholder="network50"><small>${isNew ? 'Нельзя будет изменить' : 'Не меняется'}</small></label>
-      ${trial ? '' : `<label class="field"><span>Цена, ₸ в месяц</span><input class="input" type="number" name="price" min="0" step="10" value="${p.price}"></label>`}
+      ${trial ? '' : `<label class="field"><span>Цена, ₸ в месяц</span><input class="input" type="number" name="price" min="0" step="10" value="${p.price}"></label>
+      <label class="field"><span>Пробная цена, ₸</span><input class="input" type="number" name="trial_price" min="0" step="10" value="${p.trial_price ?? ''}" placeholder="пусто = без пробного"><small>Цена первой оплаты этого тарифа. На сайте полная цена будет зачёркнута</small></label>
+      <label class="field"><span>Пробный срок, дней</span><input class="input" type="number" name="trial_days" min="1" max="90" value="${p.trial_days ?? ''}" placeholder="например 14"><small>На сколько дней включится тариф за пробную цену, потом — полная цена</small></label>`}
       <label class="field"><span>Сотрудников максимум</span><input class="input" type="number" name="staff_limit" min="1" max="1000" value="${p.staff_limit}"></label>
       <div class="field"><span>ИИ-ассистент</span><label class="check"><input type="checkbox" name="ai" ${p.ai ? 'checked' : ''}><span>Включён в тариф</span></label></div>
       <label class="field"><span>Ответов ИИ в месяц</span><input class="input" type="number" name="ai_limit" min="0" step="100" value="${p.ai_limit}"><small>Защита от перерасхода. 1 ответ ≈ 0,5–1 ₸ на DeepSeek, 2–6 ₸ на Claude</small></label>
@@ -227,10 +229,12 @@ function planModal(p) {
       title: f.title.value.trim(), staff_limit: Math.max(1, +f.staff_limit.value || 1), ai: f.ai.checked,
       ai_limit: Math.max(0, +f.ai_limit.value || 0), sort: +f.sort.value || 0,
     };
-    if (!trial) Object.assign(row, { price: Math.max(0, +f.price.value || 0), features: f.features.value.trim() || null, is_public: f.is_public.checked, is_active: f.is_active.checked });
+    if (!trial) Object.assign(row, { price: Math.max(0, +f.price.value || 0), features: f.features.value.trim() || null, is_public: f.is_public.checked, is_active: f.is_active.checked,
+      trial_price: f.trial_price.value === '' ? null : Math.max(0, +f.trial_price.value || 0), trial_days: f.trial_days.value === '' ? null : Math.min(90, Math.max(1, +f.trial_days.value || 1)) });
     if (row.title.length < 2) return toastErr('Укажите название');
     if (row.ai && !row.ai_limit) return toastErr('Укажите, сколько ответов ИИ в месяц входит в тариф');
     if (!trial && row.is_active && !row.price) return toastErr('Укажите цену');
+    if (!trial && (row.trial_price == null) !== (row.trial_days == null)) return toastErr('Для пробного периода укажите и цену, и срок (или очистите оба поля)');
     await busy(e.target, async () => {
       let r;
       if (isNew) {
