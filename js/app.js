@@ -880,11 +880,20 @@ async function renderBilling() {
     $('#pay').innerHTML = s.kaspi_details
       ? `<div><b>К оплате: ${money(amount)}</b> — тариф «${state.plan === 'start' ? 'Старт' : 'Бизнес'}» на ${state.months} мес.</div>
         <div><div class="small muted">Переведите через Kaspi:</div><div class="pre" style="font-weight:600">${esc(s.kaspi_details)}</div></div>
+        <button type="button" class="btn btn-pri" id="openKaspi">Оплатить в Kaspi · ${money(amount)}</button>
+        <div class="small muted">Кнопка скопирует номер и откроет приложение Kaspi. Выберите «Переводы», вставьте номер и введите сумму ${money(amount)}.</div>
         <div class="small">В комментарии к переводу укажите: <b>${esc(b.slug)}</b></div>
         <label class="field"><span>Имя отправителя перевода (как в Kaspi)</span><input class="input" id="payer" maxlength="200" placeholder="Например: Айгерим С."></label>
         <button class="btn btn-pri" id="paid">Я оплатил(а)</button>
         <div class="small muted">После проверки перевода подписка продлится автоматически, обычно в течение нескольких часов. Автосписаний нет — вы платите только когда сами решите продлить.</div>`
       : `<div>Реквизиты для оплаты скоро появятся.${s.support_contact ? ` Напишите нам: <b>${esc(s.support_contact)}</b>` : ''}</div>`;
+    const ok = $('#openKaspi');
+    if (ok) ok.onclick = async () => {
+      const phone = (String(s.kaspi_details).match(/[+\d][\d\s()-]{9,}/) || [''])[0].replace(/[^\d]/g, '');
+      if (phone) await copyText(phone);
+      window.location.href = 'kaspi://';
+      setTimeout(() => { if (!document.hidden) window.open('https://kaspi.kz/', '_blank'); }, 1500);
+    };
     const paid = $('#paid');
     if (paid) paid.onclick = async () => {
       const note = $('#payer').value.trim();
