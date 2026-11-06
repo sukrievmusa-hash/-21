@@ -1234,3 +1234,17 @@ begin
     values (v_b, 'Детская стрижка', 45, 4000, 4, 'Для детей до 12 лет') returning id into sv4;
   insert into public.staff_services (business_id, staff_id, service_id) values (v_b, s1, sv4);
 end $$;
+
+-- Фиксированный search_path для вспомогательных функций (рекомендация линтера Supabase)
+alter function private.plan_staff_limit(text)   set search_path = public, extensions;
+alter function private.norm_phone(text)         set search_path = public, extensions;
+alter function private.fmt_phone(text)          set search_path = public, extensions;
+alter function private.h(text)                  set search_path = public, extensions;
+alter function private.money(int)               set search_path = public, extensions;
+alter function private.fmt_dt(timestamptz, text) set search_path = public, extensions;
+alter function private.plan_title(text)         set search_path = public, extensions;
+alter function private.biz_active(public.businesses) set search_path = public, extensions;
+alter function private.booking_card(public.bookings, public.businesses) set search_path = public, extensions;
+alter function private.owner_card(public.bookings, public.businesses)   set search_path = public, extensions;
+alter function private.booking_buttons(public.bookings) set search_path = public, extensions;
+alter function private.bookable_staff(uuid)     set search_path = public, extensions;

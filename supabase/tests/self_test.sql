@@ -4,7 +4,7 @@
 
 create or replace function private.self_test()
 returns table (step text, ok boolean, info text)
-language plpgsql as $$
+language plpgsql set search_path = public, extensions as $$
 declare
   u1 uuid := gen_random_uuid(); u2 uuid := gen_random_uuid(); ua uuid := gen_random_uuid();
   v_biz uuid; v_staff uuid; v_svc uuid; v_day date; v_slot timestamptz; v_tok text; v_tok2 text;
