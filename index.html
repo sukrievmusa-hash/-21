@@ -5,146 +5,183 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Kezek — онлайн-запись и напоминания клиентам в Telegram</title>
   <meta name="description" content="Онлайн-запись для салонов, барбершопов, мастеров и репетиторов. Клиенты записываются по ссылке 24/7, бот напоминает о визите в Telegram. 14 дней бесплатно, оплата через Kaspi.">
-  <meta property="og:title" content="Kezek — онлайн-запись и напоминания клиентам">
+  <meta name="theme-color" content="#f6f1e7">
+  <meta property="og:type" content="website">
+  <meta property="og:locale" content="ru_RU">
+  <meta property="og:site_name" content="Kezek">
+  <meta property="og:title" content="Kezek — онлайн-запись, которая сама напоминает клиентам">
   <meta property="og:description" content="Клиенты записываются сами по ссылке, бот напоминает о визите. Меньше неявок, меньше переписки.">
-  <meta name="theme-color" content="#0f766e">
-  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%230f766e'/%3E%3Ctext x='16' y='22' font-size='18' text-anchor='middle' fill='white' font-family='Arial' font-weight='bold'%3EK%3C/text%3E%3C/svg%3E">
-  <link rel="stylesheet" href="css/style.css">
+  <meta name="twitter:card" content="summary">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='9' fill='%230f4c3a'/%3E%3Ctext x='16' y='24' font-size='22' text-anchor='middle' fill='%23f6f1e7' font-family='Georgia,serif' font-style='italic' font-weight='bold'%3EK%3C/text%3E%3C/svg%3E">
+  <link rel="preload" href="fonts/onest-cyrillic-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="fonts/playfair-display-cyrillic-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="css/landing.css">
+  <script type="application/ld+json">{"@context":"https://schema.org","@type":"SoftwareApplication","name":"Kezek","applicationCategory":"BusinessApplication","operatingSystem":"Web","inLanguage":"ru","description":"Онлайн-запись клиентов и напоминания в Telegram для малого бизнеса Казахстана"}</script>
 </head>
-<body>
-  <nav class="nav"><div class="container">
-    <a class="logo" href="index.html"><i>K</i><span data-brand>Kezek</span></a>
-    <div class="links">
-      <a class="l" href="#features">Возможности</a><a class="l" href="#pricing">Цены</a><a class="l" href="#faq">Вопросы</a>
-      <a class="btn btn-sm btn-ghost" href="app.html">Войти</a>
-      <a class="btn btn-sm btn-pri" href="app.html#signup">Попробовать</a>
-    </div>
-  </div></nav>
+<body class="L">
+  <a class="skip" href="#main">К содержимому</a>
 
-  <header class="hero"><div class="container hero-grid">
-    <div>
-      <span class="chip" style="margin-bottom:16px">🇰🇿 Для малого бизнеса Казахстана</span>
-      <h1>Онлайн-запись, которая сама напоминает клиентам о визите</h1>
-      <p class="lead">Клиенты записываются по ссылке в любое время, а бот в Telegram напоминает им за сутки и за 2 часа. Меньше неявок, меньше переписки в WhatsApp — больше записей.</p>
-      <div class="row" style="margin-top:22px">
-        <a class="btn btn-pri btn-lg" href="app.html#signup">Попробовать бесплатно <span class="trial-days">14</span> дней</a>
-        <a class="btn btn-lg" href="book.html?b=demo">Посмотреть демо</a>
-      </div>
-      <div class="trust"><span>✓ Без карты</span><span>✓ Настройка за 10 минут</span><span>✓ Оплата через Kaspi</span><span>✓ Без автосписаний</span></div>
-    </div>
-    <div class="phone-mock"><div class="scr">
-      <div style="background:linear-gradient(135deg,#0f766e,#134e4a);color:#fff;padding:16px 14px">
-        <div style="font-weight:800">Барбершоп «Сарбаз»</div><div style="font-size:12px;opacity:.85">Алматы, Абая 10</div></div>
-      <div style="padding:10px 12px 4px;font-weight:700;font-size:14px">Выберите время</div>
-      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;padding:0 12px 12px">
-        <span class="slot" style="padding:7px 0;font-size:13px;text-align:center">10:00</span><span class="slot" style="padding:7px 0;font-size:13px;text-align:center">11:30</span>
-        <span class="slot sel" style="padding:7px 0;font-size:13px;text-align:center">14:00</span><span class="slot" style="padding:7px 0;font-size:13px;text-align:center">16:30</span></div>
-      <div style="background:#d6e4f0;padding:4px 0 2px">
-        <div class="tg-msg">⏰ <b>Напоминаем о записи</b><br>Барбершоп «Сарбаз»<br>📅 12 ноября (ср), 14:00<br>📋 Стрижка + борода<br>👤 Мастер: Алихан</div>
-        <div class="tg-btns"><span>✅ Приду</span><span>❌ Отменить</span></div></div>
-    </div></div>
+  <header class="top"><div class="wrap">
+    <a class="brand" href="index.html" aria-label="Kezek — на главную">Kezek<i></i></a>
+    <nav class="menu" aria-label="Основное меню">
+      <a href="#features">Возможности</a><a href="#pricing">Цены</a><a href="#faq">Вопросы</a>
+      <a class="b b-sm" href="app.html">Войти</a>
+    </nav>
   </div></header>
 
-  <section class="section alt"><div class="container">
-    <div class="section-h"><h2>Подходит всем, кто работает по записи</h2></div>
-    <div class="who">
-      <span class="chip">💈 Барбершопы</span><span class="chip">💇‍♀️ Салоны красоты</span><span class="chip">💅 Ногтевые студии</span><span class="chip">👁 Брови и ресницы</span>
-      <span class="chip">💆 Массаж и SPA</span><span class="chip">🧴 Косметологи</span><span class="chip">📚 Репетиторы и курсы</span><span class="chip">🚗 Автомойки и детейлинг</span>
-      <span class="chip">📸 Фотостудии</span><span class="chip">🦷 Клиники</span><span class="chip">🧠 Психологи</span><span class="chip">🏋️ Тренеры</span>
-    </div>
-  </div></section>
+  <main id="main">
+    <section class="hero"><div class="wrap">
+      <div>
+        <p class="kicker">Кезек — по-казахски «очередь»</p>
+        <h1>Очередь, которая <em>стоит сама</em></h1>
+        <p class="lead">Клиенты записываются по ссылке в любое время, а бот в Telegram напоминает им за сутки и за 2 часа. Меньше неявок, меньше переписки в WhatsApp — больше записей.</p>
+        <div class="cta-row">
+          <a class="b b-solid" href="app.html#signup"><span>Попробовать <span class="trial-days">14</span> дней бесплатно</span> <span class="arrow" aria-hidden="true">→</span></a>
+          <a class="b" href="book.html?b=demo">Посмотреть демо</a>
+        </div>
+        <ul class="assure"><li>Без карты</li><li>Настройка за 10 минут</li><li>Оплата через Kaspi</li><li>Без автосписаний</li></ul>
+      </div>
 
-  <section class="section"><div class="narrow" style="max-width:860px">
-    <div class="section-h"><h2>Знакомо?</h2></div>
-    <div class="pain"><div class="bad">😩 Клиент забыл про запись и не пришёл — час работы пропал</div><div class="good">✅ Бот напоминает за сутки и за 2 часа. Клиент нажимает «Приду» или «Отменить» — и время освобождается для другого</div></div>
-    <div class="pain"><div class="bad">😩 Пишут в WhatsApp в 23:00 «есть время на завтра?» — отвечаете утром, клиент уже ушёл к конкуренту</div><div class="good">✅ Ссылка для записи работает 24/7: клиент сам видит свободное время и записывается за 30 секунд</div></div>
-    <div class="pain"><div class="bad">😩 Записи в тетради и в голове, мастера путаются, кто к кому</div><div class="good">✅ Журнал по каждому мастеру с графиком, перерывами и выходными. Наложения записей невозможны</div></div>
-    <div class="pain"><div class="bad">😩 Не знаете, кто ваши постоянные клиенты и кто давно не приходил</div><div class="good">✅ База клиентов собирается сама: история визитов, неявки, сумма, заметки</div></div>
-  </div></section>
+      <div class="stage" role="img" aria-label="Пример: клиент выбирает время на странице записи и получает напоминание в Telegram с кнопками «Приду» и «Отменить»">
+        <div class="phone" aria-hidden="true">
+          <div class="ph-h"><b>Барбершоп «Сарбаз»</b><span>Алматы, Абая 10</span></div>
+          <div class="ph-b">
+            <p class="ph-t">Выберите время</p>
+            <div class="days"><span>пн<b>10</b></span><span>вт<b>11</b></span><span class="on">ср<b>12</b></span><span>чт<b>13</b></span><span>пт<b>14</b></span></div>
+            <div class="slots"><span>10:00</span><span>11:30</span><span class="pick">14:00</span><span>15:30</span><span>16:30</span><span>18:00</span></div>
+            <div class="ph-go">Записаться</div>
+          </div>
+        </div>
+        <div class="tg" aria-hidden="true">
+          <b>Напоминаем о записи</b><br>Барбершоп «Сарбаз» · ср, 12 ноября, 14:00<br>Стрижка + борода · мастер Алихан
+          <div class="tg-btns"><span>Приду</span><span>Отменить</span></div>
+        </div>
+      </div>
+    </div></section>
 
-  <section class="section alt" id="features"><div class="container">
-    <div class="section-h"><h2>Всё для записи — в одном месте</h2><p class="muted">Никаких приложений для клиентов: только ссылка и Telegram</p></div>
-    <div class="grid grid-3">
-      <div class="card feat"><div class="ic">🔗</div><h3>Своя страница записи</h3><p class="muted">Ссылка и QR-код — в шапку Instagram, в WhatsApp Business, на 2GIS и на стойку.</p></div>
-      <div class="card feat"><div class="ic">⏰</div><h3>Напоминания в Telegram</h3><p class="muted">За сутки и за 2 часа, с кнопками «Приду» и «Отменить». Бесплатно для вас и клиентов.</p></div>
-      <div class="card feat"><div class="ic">🔔</div><h3>Уведомления владельцу</h3><p class="muted">Каждая новая онлайн-запись и отмена приходят вам в Telegram сразу.</p></div>
-      <div class="card feat"><div class="ic">🗓</div><h3>Журнал по мастерам</h3><p class="muted">День по сотрудникам, запись в один клик, статусы «пришёл / не пришёл».</p></div>
-      <div class="card feat"><div class="ic">👥</div><h3>База клиентов</h3><p class="muted">Телефоны, история визитов, неявки, заметки. Напомнить в WhatsApp — одной кнопкой.</p></div>
-      <div class="card feat"><div class="ic">📊</div><h3>Статистика</h3><p class="muted">Сколько записей, сколько онлайн, выручка, новые клиенты за 30 дней.</p></div>
-    </div>
-  </div></section>
+    <section class="dark" aria-labelledby="pain-h"><div class="wrap">
+      <div class="sec-h rv"><p class="kicker">Знакомо?</p><h2 id="pain-h">Четыре потери, которые <em>можно не терять</em></h2></div>
+      <div class="pairs">
+        <div class="pair rv"><span class="n">01</span><p class="bad">Клиент забыл про запись и не пришёл — час работы пропал</p><p class="good">Бот напоминает за сутки и за 2 часа. Клиент нажимает «Приду» или «Отменить» — и время освобождается для другого.</p></div>
+        <div class="pair rv"><span class="n">02</span><p class="bad">В 23:00 пишут в WhatsApp «есть время на завтра?» — вы отвечаете утром, клиент уже ушёл</p><p class="good">Ссылка для записи работает 24/7: клиент сам видит свободное время и записывается за 30 секунд.</p></div>
+        <div class="pair rv"><span class="n">03</span><p class="bad">Записи в тетради и в голове, мастера путаются, кто к кому</p><p class="good">Журнал по каждому мастеру с графиком, перерывами и выходными. Наложения записей невозможны.</p></div>
+        <div class="pair rv"><span class="n">04</span><p class="bad">Не знаете, кто ваши постоянные клиенты и кто давно не приходил</p><p class="good">База клиентов собирается сама: история визитов, неявки, сумма, заметки.</p></div>
+      </div>
+    </div></section>
 
-  <section class="section"><div class="container">
-    <div class="section-h"><h2>Запуск за 10 минут</h2></div>
-    <div class="grid grid-3">
-      <div class="card feat"><div class="step-n">1</div><h3>Зарегистрируйтесь</h3><p class="muted">Укажите название и добавьте услуги — есть готовые шаблоны для вашей сферы.</p></div>
-      <div class="card feat"><div class="step-n">2</div><h3>Поделитесь ссылкой</h3><p class="muted">Поставьте её в Instagram, WhatsApp и 2GIS. Распечатайте QR-код.</p></div>
-      <div class="card feat"><div class="step-n">3</div><h3>Принимайте записи</h3><p class="muted">Клиенты записываются сами, вы получаете уведомления, бот напоминает о визитах.</p></div>
-    </div>
-  </div></section>
+    <section id="features" aria-labelledby="feat-h"><div class="wrap">
+      <div class="sec-h rv"><p class="kicker">Возможности</p><h2 id="feat-h">Всё для записи — <em>в одном месте</em></h2><p>Никаких приложений для клиентов: только ссылка и Telegram.</p></div>
+      <div class="feats">
+        <article class="feat rv"><span class="n">i</span><div><h3>Своя страница записи</h3><p>Ссылка и QR-код — в шапку Instagram, в WhatsApp Business, на 2GIS и на стойку.</p></div></article>
+        <article class="feat rv"><span class="n">ii</span><div><h3>Напоминания в Telegram</h3><p>За сутки и за 2 часа, с кнопками «Приду» и «Отменить». Бесплатно для вас и клиентов.</p></div></article>
+        <article class="feat rv"><span class="n">iii</span><div><h3>Уведомления владельцу</h3><p>Каждая новая онлайн-запись и отмена приходят вам в Telegram сразу.</p></div></article>
+        <article class="feat rv"><span class="n">iv</span><div><h3>Журнал по мастерам</h3><p>День по сотрудникам, запись в один клик, статусы «пришёл / не пришёл».</p></div></article>
+        <article class="feat rv"><span class="n">v</span><div><h3>База клиентов</h3><p>Телефоны, история визитов, неявки, заметки. Напомнить в WhatsApp — одной кнопкой.</p></div></article>
+        <article class="feat rv"><span class="n">vi</span><div><h3>Статистика</h3><p>Сколько записей, сколько онлайн, выручка, новые клиенты за 30 дней.</p></div></article>
+      </div>
+    </div></section>
 
-  <section class="section alt" id="pricing"><div class="container">
-    <div class="section-h"><h2>Простые цены</h2><p class="muted">Одна неявка клиента обходится дороже месяца подписки</p></div>
-    <div class="grid grid-2" style="max-width:820px;margin:0 auto" id="priceGrid">
-      <div class="card price-card"><h3>Старт</h3><div class="price"><span data-price="start">3 990 ₸</span><span class="muted small" style="font-size:16px"> / мес</span></div>
-        <p class="muted">Для частного мастера</p>
-        <ul><li>1 сотрудник</li><li>Страница онлайн-записи и QR-код</li><li>Напоминания клиентам в Telegram</li><li>Уведомления о записях</li><li>Журнал и база клиентов</li></ul>
-        <a class="btn btn-block" href="app.html#signup">Начать бесплатно</a></div>
-      <div class="card price-card hl"><span class="tag">Популярный</span><h3>Бизнес</h3><div class="price"><span data-price="business">9 990 ₸</span><span class="muted small" style="font-size:16px"> / мес</span></div>
-        <p class="muted">Для салона или студии</p>
-        <ul><li>До 10 сотрудников</li><li>Всё из «Старт»</li><li>Отдельный график для каждого мастера</li><li>Выбор мастера при записи</li><li>Статистика по команде</li></ul>
-        <a class="btn btn-pri btn-block" href="app.html#signup">Начать бесплатно</a></div>
-    </div>
-    <p class="center muted" style="margin-top:18px"><span class="trial-days">14</span> дней бесплатно со всеми функциями записи и напоминаний · ИИ-ассистент — на тарифе «Премиум + ИИ» · При оплате за год — 2 месяца в подарок</p>
-  </div></section>
+    <section style="background:var(--paper-2)" aria-labelledby="steps-h"><div class="wrap">
+      <div class="sec-h rv"><p class="kicker">Запуск</p><h2 id="steps-h">Работает через <em>10 минут</em></h2></div>
+      <div class="steps">
+        <div class="step rv"><div class="n">1</div><h3>Зарегистрируйтесь</h3><p>Укажите название и добавьте услуги — есть готовые шаблоны для вашей сферы.</p></div>
+        <div class="step rv"><div class="n">2</div><h3>Поделитесь ссылкой</h3><p>Поставьте её в Instagram, WhatsApp и 2GIS. Распечатайте QR-код.</p></div>
+        <div class="step rv"><div class="n">3</div><h3>Принимайте записи</h3><p>Клиенты записываются сами, вы получаете уведомления, бот напоминает о визитах.</p></div>
+      </div>
+    </div></section>
 
-  <section class="section" id="faq"><div class="narrow" style="max-width:760px">
-    <div class="section-h"><h2>Частые вопросы</h2></div>
-    <details class="faq"><summary>Клиентам нужно что-то скачивать?</summary><p>Нет. Клиент открывает ссылку в браузере, выбирает услугу и время и записывается. Напоминания приходят в Telegram — если клиент захочет их получать, достаточно одной кнопки.</p></details>
-    <details class="faq"><summary>А если у клиента нет Telegram?</summary><p>Запись работает и без него. В журнале у каждой записи есть кнопка «Напомнить в WhatsApp» — с уже готовым текстом напоминания.</p></details>
-    <details class="faq"><summary>Что умеет ИИ-ассистент?</summary><p>Он отвечает вашим клиентам в Telegram круглосуточно: рассказывает об услугах и ценах, подбирает свободное время и сам записывает. Отвечает только по вашим данным и базе знаний, которую вы заполняете в кабинете. Если не знает ответа — пересылает вопрос вам, и вы отвечаете одной кнопкой.</p></details>
-    <details class="faq"><summary>Как оплатить?</summary><p>Переводом через Kaspi. В кабинете в разделе «Подписка» выберите тариф, переведите сумму и нажмите «Я оплатил». После проверки подписка продлится.</p></details>
-    <details class="faq"><summary>Будут ли автоматические списания?</summary><p>Нет. Вы платите только тогда, когда сами решите продлить. За несколько дней до окончания мы пришлём напоминание.</p></details>
-    <details class="faq"><summary>Что будет после пробного периода?</summary><p>Если не продлить, онлайн-запись для клиентов приостановится, но все ваши данные — клиенты, история, настройки — сохранятся. Продлите в любой момент, и всё заработает снова.</p></details>
-    <details class="faq"><summary>Можно добавлять записи вручную, например по звонку?</summary><p>Да. В журнале нажмите на свободное время у мастера — и запишите клиента. Наложения записей система не допустит.</p></details>
-    <details class="faq"><summary>Мои данные в безопасности?</summary><p>Данные хранятся в защищённой базе, доступ к записям и клиентам есть только у вас. Мы не продаём и не передаём данные третьим лицам и не показываем рекламу.</p></details>
-  </div></section>
+    <section aria-labelledby="who-h"><div class="wrap">
+      <div class="sec-h rv"><p class="kicker">Для кого</p><h2 id="who-h">Всем, кто <em>работает по записи</em></h2></div>
+      <ul class="who rv">
+        <li>Барбершопы</li><li>Салоны красоты</li><li>Ногтевые студии</li><li>Брови и ресницы</li><li>Массаж и SPA</li><li>Косметологи</li>
+        <li>Репетиторы и курсы</li><li>Автомойки и детейлинг</li><li>Фотостудии</li><li>Клиники</li><li>Психологи</li><li>Тренеры</li>
+      </ul>
+    </div></section>
 
-  <section class="section" style="padding-top:0"><div class="container">
-    <div class="cta-band"><h2>Попробуйте <span class="trial-days">14</span> дней бесплатно</h2>
-      <p style="opacity:.9">Без карты и обязательств. Первая запись — уже сегодня.</p>
-      <a class="btn btn-lg" href="app.html#signup">Создать страницу записи</a></div>
-  </div></section>
+    <section id="pricing" style="background:var(--paper-2)" aria-labelledby="price-h"><div class="wrap">
+      <div class="sec-h rv"><p class="kicker">Цены</p><h2 id="price-h">Одна неявка стоит дороже <em>месяца подписки</em></h2></div>
+      <div class="plans" id="priceGrid">
+        <div class="plan"><h3>Старт</h3><div class="was"></div><div class="price">10 000 ₸ <small>/ мес</small></div><div class="then"></div>
+          <ul><li>1 сотрудник</li><li>Страница онлайн-записи и QR-код</li><li>Напоминания клиентам в Telegram</li><li>Журнал и база клиентов</li></ul>
+          <a class="b b-block" href="app.html#signup">Начать бесплатно</a></div>
+        <div class="plan hl"><span class="tag">Популярный</span><h3>Бизнес</h3><div class="was"></div><div class="price">25 000 ₸ <small>/ мес</small></div><div class="then"></div>
+          <ul><li>До 10 сотрудников</li><li>Всё из «Старт»</li><li>График для каждого мастера</li><li>Статистика по команде</li></ul>
+          <a class="b b-solid b-block" href="app.html#signup">Начать бесплатно</a></div>
+      </div>
+      <p class="note rv"><span class="trial-days">14</span> дней бесплатно со всеми функциями записи и напоминаний. ИИ-ассистент — на тарифе «Премиум + ИИ». При оплате за год — 2 месяца в подарок.</p>
+    </div></section>
 
-  <footer class="foot"><div class="container row between">
-    <div><span class="logo" style="font-size:16px"><i style="width:24px;height:24px;font-size:13px">K</i><span data-brand>Kezek</span></span>
-      <div style="margin-top:6px">Онлайн-запись и напоминания клиентам</div></div>
-    <div class="stack" style="text-align:right">
-      <div id="support"></div>
-      <div><a href="terms.html">Оферта</a> · <a href="terms.html#privacy">Конфиденциальность</a> · <a href="app.html">Вход</a></div>
-    </div>
+    <section id="faq" aria-labelledby="faq-h"><div class="wrap">
+      <div class="sec-h rv"><p class="kicker">Вопросы</p><h2 id="faq-h">Что обычно <em>спрашивают</em></h2></div>
+      <div class="faq">
+        <details><summary>Клиентам нужно что-то скачивать?</summary><p>Нет. Клиент открывает ссылку в браузере, выбирает услугу и время и записывается. Напоминания приходят в Telegram — если клиент захочет их получать, достаточно одной кнопки.</p></details>
+        <details><summary>А если у клиента нет Telegram?</summary><p>Запись работает и без него. В журнале у каждой записи есть кнопка «Напомнить в WhatsApp» — с уже готовым текстом напоминания.</p></details>
+        <details><summary>Что умеет ИИ-ассистент?</summary><p>Он отвечает вашим клиентам в Telegram круглосуточно: рассказывает об услугах и ценах, подбирает свободное время и сам записывает. Отвечает только по вашим данным и базе знаний, которую вы заполняете в кабинете. Если не знает ответа — пересылает вопрос вам, и вы отвечаете одной кнопкой.</p></details>
+        <details><summary>Как оплатить?</summary><p>Переводом через Kaspi. В кабинете в разделе «Подписка» выберите тариф, переведите сумму и нажмите «Я оплатил». После проверки подписка продлится.</p></details>
+        <details><summary>Будут ли автоматические списания?</summary><p>Нет. Вы платите только тогда, когда сами решите продлить. За несколько дней до окончания мы пришлём напоминание.</p></details>
+        <details><summary>Что будет после пробного периода?</summary><p>Если не продлить, онлайн-запись для клиентов приостановится, но все ваши данные — клиенты, история, настройки — сохранятся. Продлите в любой момент, и всё заработает снова.</p></details>
+        <details><summary>Можно добавлять записи вручную, например по звонку?</summary><p>Да. В журнале нажмите на свободное время у мастера — и запишите клиента. Наложения записей система не допустит.</p></details>
+        <details><summary>Мои данные в безопасности?</summary><p>Данные хранятся в защищённой базе, доступ к записям и клиентам есть только у вас. Мы не продаём и не передаём данные третьим лицам и не показываем рекламу.</p></details>
+      </div>
+    </div></section>
+
+    <section class="dark final" aria-labelledby="final-h"><div class="wrap">
+      <h2 id="final-h" class="rv">Первая запись — <em>уже сегодня</em></h2>
+      <p class="rv">Пробный период <span class="trial-days">14</span> дней, без карты и обязательств.</p>
+      <a class="b rv" href="app.html#signup"><span>Создать страницу записи</span> <span class="arrow" aria-hidden="true">→</span></a>
+    </div></section>
+  </main>
+
+  <footer><div class="wrap">
+    <div><a class="brand" href="index.html" style="font-size:22px" aria-label="Kezek — на главную">Kezek<i></i></a><div>Онлайн-запись и напоминания клиентам</div></div>
+    <div><div id="support"></div><div><a href="terms.html">Оферта</a> · <a href="terms.html#privacy">Конфиденциальность</a> · <a href="app.html">Вход</a></div></div>
   </div></footer>
 
-  <script src="vendor/supabase.js"></script>
+  <div class="dock" id="dock"><a class="b b-solid" href="app.html#signup">Попробовать бесплатно</a></div>
+
   <script type="module">
-    import { sb, money, esc, brandify } from './js/lib.js';
-    brandify();
-    sb.from('platform_settings').select('trial_days,support_contact').eq('id', 1).single().then(({ data }) => {
-      if (!data) return;
-      document.querySelectorAll('.trial-days').forEach((e) => (e.textContent = data.trial_days));
-      if (data.support_contact) document.getElementById('support').innerHTML = 'Поддержка: ' + esc(data.support_contact);
+    import { CONFIG } from './js/config.js';
+    const $ = (s, el = document) => el.querySelector(s);
+    const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    const money = (n) => Number(n).toLocaleString('ru-RU').replace(/,/g, ' ') + ' ₸';
+    const rest = (path) => fetch(`${CONFIG.SUPABASE_URL}/rest/v1/${path}`, { headers: { apikey: CONFIG.SUPABASE_KEY, Authorization: `Bearer ${CONFIG.SUPABASE_KEY}` } }).then((r) => (r.ok ? r.json() : null)).catch(() => null);
+
+    // Появление блоков при прокрутке (CSS включает анимацию только если движение разрешено)
+    const io = 'IntersectionObserver' in window ? new IntersectionObserver((es) => es.forEach((e) => { if (e.isIntersecting) { e.target.classList.add('in'); io.unobserve(e.target); } }), { rootMargin: '0px 0px -8% 0px' }) : null;
+    document.querySelectorAll('.rv').forEach((el) => (io ? io.observe(el) : el.classList.add('in')));
+
+    // Закреплённая кнопка на телефоне: появляется после первого экрана и прячется у тарифов/финала
+    const dock = $('#dock'), hero = $('.hero');
+    if (dock && 'IntersectionObserver' in window) {
+      let heroOut = false, ctaIn = false;
+      const upd = () => dock.classList.toggle('show', heroOut && !ctaIn);
+      new IntersectionObserver(([e]) => { heroOut = !e.isIntersecting; upd(); }).observe(hero);
+      new IntersectionObserver((es) => { ctaIn = es.some((e) => e.isIntersecting); upd(); }, { threshold: .3 }).observe($('.final'));
+    }
+
+    rest('platform_settings?select=trial_days,support_contact&id=eq.1').then((rows) => {
+      const d = rows && rows[0];
+      if (!d) return;
+      document.querySelectorAll('.trial-days').forEach((e) => (e.textContent = d.trial_days));
+      if (d.support_contact) $('#support').innerHTML = 'Поддержка: ' + esc(d.support_contact);
     });
-    sb.from('plans').select('*').eq('is_public', true).eq('is_active', true).gt('price', 0).order('sort').then(({ data }) => {
+
+    rest('plans?select=*&is_public=eq.true&is_active=eq.true&price=gt.0&order=sort').then((data) => {
       if (!data || !data.length) return;
-      const g = document.getElementById('priceGrid');
       const n = data.length;
-      g.className = 'grid ' + (n >= 4 ? 'grid-4' : n === 3 ? 'grid-3' : 'grid-2');
-      g.style.maxWidth = n >= 4 ? '1180px' : n === 3 ? '1040px' : '820px';
       const hl = data.find((p) => p.code === 'business') || data[Math.min(1, n - 1)];
-      g.innerHTML = data.map((p, i) => `<div class="card price-card ${p === hl ? 'hl' : ''}">${p === hl ? '<span class="tag">Популярный</span>' : p.ai ? '<span class="tag" style="background:#7c3aed">С ИИ</span>' : ''}
-        <h3>${esc(p.title)}</h3>${p.trial_price != null && p.trial_days ? `<div class="muted" style="text-decoration:line-through">${money(p.price)} / мес</div><div class="price"><span style="font-size:${n >= 4 ? 30 : 38}px">${money(p.trial_price)}</span><span class="muted small" style="font-size:16px"> за ${p.trial_days} дн.</span></div><div class="small" style="color:var(--ok,#16a34a);font-weight:600;margin-bottom:6px">Пробный период ${p.trial_days} дн., потом ${money(p.price)} / мес</div>` : `<div class="price"><span style="font-size:${n >= 4 ? 30 : 38}px">${money(p.price)}</span><span class="muted small" style="font-size:16px"> / мес</span></div>`}
-        <ul>${(p.features || 'До ' + p.staff_limit + ' сотрудников').split('\n').filter((x) => x.trim()).map((f) => `<li>${esc(f.trim())}</li>`).join('')}</ul>
-        ${n >= 4 && i >= n - 2 ? `<a class="btn btn-pri btn-block" href="app.html#signup">Оплатить</a>` : `<a class="btn ${p === hl ? 'btn-pri' : ''} btn-block" href="app.html#signup">Начать бесплатно</a>`}</div>`).join('');
+      $('#priceGrid').innerHTML = data.map((p, i) => {
+        const trial = p.trial_price != null && p.trial_days;
+        const feats = (p.features || 'До ' + p.staff_limit + ' сотрудников').split('\n').filter((x) => x.trim());
+        const payNow = n >= 4 && i >= n - 2; // дорогие тарифы — сразу «Оплатить»
+        const tag = p === hl ? '<span class="tag">Популярный</span>' : p.ai ? '<span class="tag ai">С ИИ</span>' : '';
+        return `<div class="plan ${p === hl ? 'hl' : ''}">${tag}<h3>${esc(p.title)}</h3>
+          <div class="was">${trial ? money(p.price) + ' / мес' : ''}</div>
+          <div class="price">${money(trial ? p.trial_price : p.price)} <small>${trial ? 'за ' + p.trial_days + ' дн.' : '/ мес'}</small></div>
+          <div class="then">${trial ? 'Пробный период, потом ' + money(p.price) + ' / мес' : ''}</div>
+          <ul>${feats.map((f) => `<li>${esc(f.trim())}</li>`).join('')}</ul>
+          <a class="b ${p === hl || payNow ? 'b-solid' : ''} b-block" href="app.html#signup">${payNow ? 'Оплатить' : 'Начать бесплатно'}</a></div>`;
+      }).join('');
     });
   </script>
 </body>
