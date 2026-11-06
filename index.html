@@ -144,7 +144,7 @@
       g.innerHTML = data.map((p, i) => `<div class="card price-card ${p === hl ? 'hl' : ''}">${p === hl ? '<span class="tag">Популярный</span>' : p.ai ? '<span class="tag" style="background:#7c3aed">С ИИ</span>' : ''}
         <h3>${esc(p.title)}</h3><div class="price"><span style="font-size:${n >= 4 ? 30 : 38}px">${money(p.price)}</span><span class="muted small" style="font-size:16px"> / мес</span></div>
         <ul>${(p.features || 'До ' + p.staff_limit + ' сотрудников').split('\n').filter((x) => x.trim()).map((f) => `<li>${esc(f.trim())}</li>`).join('')}</ul>
-        ${n >= 4 && i >= n - 2 ? '' : `<a class="btn ${p === hl ? 'btn-pri' : ''} btn-block" href="app.html#signup">Начать бесплатно</a>`}</div>`).join('');
+        ${n >= 4 && i >= n - 2 ? `<a class="btn btn-pri btn-block" href="app.html#signup">Оплатить</a>` : `<a class="btn ${p === hl ? 'btn-pri' : ''} btn-block" href="app.html#signup">Начать бесплатно</a>`}</div>`).join('');
     });
   </script>
 </body>
