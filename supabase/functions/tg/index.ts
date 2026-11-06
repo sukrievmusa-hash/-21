@@ -1,7 +1,7 @@
 // Kezek — Telegram-бот: webhook от Telegram + подключение бота из админки.
 // Деплой: supabase functions deploy tg --no-verify-jwt
 import { createClient } from "npm:@supabase/supabase-js@2";
-import { callClaude, runAgent } from "./ai.ts";
+import { callAi, runAgent } from "./ai.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -162,7 +162,7 @@ Deno.serve(async (req) => {
       const { data: p } = await sb.rpc("ai_platform");
       if (!p?.api_key) return json({ error: "Ключ ИИ не сохранён" }, 400);
       try {
-        const j = await callClaude(p.api_key, { model: p.model, max_tokens: 20, messages: [{ role: "user", content: "Ответь одним словом: работает?" }] });
+        const j = await callAi(p.api_key, p.model, { max_tokens: 20, messages: [{ role: "user", content: "Ответь одним словом: работает?" }] });
         return json({ ok: true, model: j.model, reply: j.content?.[0]?.text ?? "" });
       } catch (e) {
         return json({ error: String((e as Error)?.message ?? e) }, 400);

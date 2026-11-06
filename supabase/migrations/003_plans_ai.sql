@@ -25,7 +25,7 @@ select v.code, v.title,
        v.staff_limit, v.ai, v.ai_limit, v.features, v.is_public, v.sort
 from public.platform_settings s,
 (values
-  ('trial',    'Пробный', 0, 10, true, 30, null, false, 0),
+  ('trial',    'Пробный', 0, 10, false, 0, null, false, 0),
   ('start',    'Старт',   0, 1, false, 0,
      E'1 сотрудник\nОнлайн-запись и журнал\nНапоминания в Telegram\nБаза клиентов', true, 10),
   ('business', 'Бизнес',  0, 10, false, 0,
@@ -156,7 +156,7 @@ end $$;
 --  ИИ-ассистент
 -- ---------------------------------------------------------------------
 alter table private.secrets add column if not exists ai_api_key text;
-alter table public.platform_settings add column if not exists ai_model text not null default 'claude-haiku-5-5';
+alter table public.platform_settings add column if not exists ai_model text not null default 'deepseek-flash';
 grant update (ai_model) on public.platform_settings to authenticated;
 
 create table if not exists public.business_ai (
@@ -341,10 +341,11 @@ begin
   if not public.is_admin() then raise exception 'Нет доступа'; end if;
   if p_key is not null then
     if p_key = '' then update private.secrets set ai_api_key = null where id = 1;
-    elsif p_key !~ '^sk-ant-[A-Za-z0-9_-]{20,}$' then raise exception 'Ключ должен начинаться с sk-ant-';
+    elsif trim(p_key) !~ '^sk-[A-Za-z0-9_-]{20,}$' then raise exception 'Ключ должен начинаться с sk- (Anthropic: sk-ant-…, DeepSeek: sk-…)';
     else update private.secrets set ai_api_key = trim(p_key) where id = 1; end if;
   end if;
   if nullif(trim(coalesce(p_model, '')), '') is not null then
+    if trim(p_model) !~ '^(claude|deepseek)[a-z0-9.-]*$' then raise exception 'Поддерживаются модели Claude и DeepSeek'; end if;
     update public.platform_settings set ai_model = trim(p_model), updated_at = now() where id = 1;
   end if;
 end $$;

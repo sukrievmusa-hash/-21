@@ -1,4 +1,4 @@
-// ИИ-ассистент бизнеса: отвечает клиентам по базе знаний, ищет свободное время и записывает.
+// ИИ-ассистент бизнеса (Claude или DeepSeek): отвечает клиентам по базе знаний, ищет свободное время и записывает.
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
 
 const API = "https://api.anthropic.com/v1/messages";
@@ -198,11 +198,15 @@ function buildMessages(history: Ctx["history"]) {
   return out;
 }
 
-export async function callClaude(apiKey: string, body: Record<string, unknown>) {
-  const r = await fetch(API, {
+// Поддерживаются Claude (Anthropic) и DeepSeek — у DeepSeek есть совместимый с Anthropic API.
+export async function callAi(apiKey: string, model: string, body: Record<string, unknown>) {
+  const deepseek = /^deepseek/i.test(model);
+  const url = deepseek ? "https://api.deepseek.com/anthropic/v1/messages" : API;
+  const payload = { ...body, model, ...(deepseek ? { thinking: { type: "disabled" } } : {}) };
+  const r = await fetch(url, {
     method: "POST",
     headers: { "x-api-key": apiKey, "anthropic-version": "2023-06-01", "content-type": "application/json" },
-    body: JSON.stringify(body),
+    body: JSON.stringify(payload),
   });
   const j = await r.json().catch(() => ({}));
   if (!r.ok) throw new Error(`ИИ ответил ошибкой ${r.status}: ${j?.error?.message ?? ""}`);
@@ -219,13 +223,13 @@ export async function runAgent(sb: SupabaseClient, businessId: string, chatId: n
   const res: AgentResult = { text: "", tokensIn: 0, tokensOut: 0 };
 
   for (let round = 0; round < MAX_ROUNDS; round++) {
-    const j = await callClaude(c.api_key, { model: c.model, max_tokens: 700, system, tools: tools(c), messages });
+    const j = await callAi(c.api_key, c.model, { max_tokens: 700, temperature: 0.3, system, tools: tools(c), messages });
     res.tokensIn += (j.usage?.input_tokens ?? 0) + (j.usage?.cache_read_input_tokens ?? 0) + (j.usage?.cache_creation_input_tokens ?? 0);
     res.tokensOut += j.usage?.output_tokens ?? 0;
     const content = j.content ?? [];
     const text = content.filter((b: any) => b.type === "text").map((b: any) => b.text).join("\n").trim();
     const uses = content.filter((b: any) => b.type === "tool_use");
-    if (!uses.length || j.stop_reason !== "tool_use") {
+    if (!uses.length) {
       res.text = text;
       break;
     }

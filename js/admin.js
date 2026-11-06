@@ -210,7 +210,7 @@ function planModal(p) {
       ${trial ? '' : `<label class="field"><span>Цена, ₸ в месяц</span><input class="input" type="number" name="price" min="0" step="10" value="${p.price}"></label>`}
       <label class="field"><span>Сотрудников максимум</span><input class="input" type="number" name="staff_limit" min="1" max="1000" value="${p.staff_limit}"></label>
       <div class="field"><span>ИИ-ассистент</span><label class="check"><input type="checkbox" name="ai" ${p.ai ? 'checked' : ''}><span>Включён в тариф</span></label></div>
-      <label class="field"><span>Ответов ИИ в месяц</span><input class="input" type="number" name="ai_limit" min="0" step="100" value="${p.ai_limit}"><small>Защита от перерасхода. ~1 ответ ≈ 2–6 ₸ ваших затрат на ИИ</small></label>
+      <label class="field"><span>Ответов ИИ в месяц</span><input class="input" type="number" name="ai_limit" min="0" step="100" value="${p.ai_limit}"><small>Защита от перерасхода. 1 ответ ≈ 0,5–1 ₸ на DeepSeek, 2–6 ₸ на Claude</small></label>
       ${trial ? '' : `<label class="field full"><span>Что входит — по пункту на строку</span><textarea class="textarea" name="features" rows="5" maxlength="1000">${esc(p.features || '')}</textarea></label>
       <div class="field"><span>Видимость</span><label class="check"><input type="checkbox" name="is_public" ${p.is_public ? 'checked' : ''}><span>Показывать на сайте и в кабинете</span></label>
         <label class="check"><input type="checkbox" name="is_active" ${p.is_active ? 'checked' : ''}><span>Можно оплатить (иначе — архив)</span></label></div>`}
@@ -278,12 +278,16 @@ async function settings() {
     const box = $('#ai');
     box.innerHTML = `${info?.ai_key_set ? `<div class="alert alert-ok" style="margin-bottom:12px">✅ Ключ сохранён (${esc(info.ai_key_hint || '')}) · модель <b>${esc(info.ai_model)}</b> <span id="aiPing" class="small"></span></div>` : ''}
       <ol class="small" style="padding-left:18px;margin:0 0 12px">
-        <li>Зарегистрируйтесь на <a href="https://console.anthropic.com" target="_blank" rel="noopener">console.anthropic.com</a>, пополните баланс (от $5) в разделе Billing.</li>
-        <li>API Keys → Create Key → скопируйте ключ <code>sk-ant-…</code> и вставьте ниже.</li>
-        <li>Поставьте лимит расходов в Limits, чтобы не было сюрпризов. Расход по бизнесам видно в «Обзоре».</li></ol>
+        <li><b>DeepSeek</b> (дешевле всего): зарегистрируйтесь на <a href="https://platform.deepseek.com" target="_blank" rel="noopener">platform.deepseek.com</a> → Top up (пополните от $2) → API keys → Create → скопируйте ключ <code>sk-…</code>.</li>
+        <li>Или <b>Claude</b>: <a href="https://console.anthropic.com" target="_blank" rel="noopener">console.anthropic.com</a> → Billing → API Keys → ключ <code>sk-ant-…</code>.</li>
+        <li>Выберите модель того же сервиса, что и ключ. Расход по бизнесам видно в «Обзоре».</li></ol>
       <div class="form-grid">
-        <label class="field"><span>Ключ Anthropic API</span><input class="input" id="aiKey" type="password" autocomplete="off" placeholder="${info?.ai_key_set ? 'Оставьте пустым, чтобы не менять' : 'sk-ant-…'}"></label>
-        <label class="field"><span>Модель</span><input class="input" id="aiModel" value="${esc(info?.ai_model || 'claude-haiku-5-5')}"><small>Haiku — быстрая и недорогая, подходит для ответов клиентам</small></label></div>
+        <label class="field"><span>Ключ API</span><input class="input" id="aiKey" type="password" autocomplete="off" placeholder="${info?.ai_key_set ? 'Оставьте пустым, чтобы не менять' : 'sk-…'}"></label>
+        <label class="field"><span>Модель</span><select class="select" id="aiModel">
+          ${[['deepseek-flash', 'DeepSeek Flash — самая дешёвая (≈0,5–1 ₸ за ответ)'], ['deepseek-v4-pro', 'DeepSeek V4 Pro — умнее, дороже'], ['claude-haiku-5-5', 'Claude Haiku — быстрая, ≈2–6 ₸ за ответ'], ['claude-sonnet-5-5', 'Claude Sonnet — самая качественная, дороже']]
+            .concat([[info?.ai_model, info?.ai_model]]).filter(([v], i, a) => v && a.findIndex(([x]) => x === v) === i)
+            .map(([v, t]) => `<option value="${esc(v)}" ${v === info?.ai_model ? 'selected' : ''}>${esc(t)}</option>`).join('')}</select>
+          <small>Ключ DeepSeek работает только с моделями DeepSeek, ключ Anthropic — с Claude</small></label></div>
       <div class="row"><button class="btn btn-pri" id="aiSave">Сохранить</button>${info?.ai_key_set ? '<button class="btn" id="aiCheck">Проверить связь</button><button class="btn btn-ghost" id="aiDel">Удалить ключ</button>' : ''}</div>`;
     $('#aiSave').onclick = async (e) => {
       await busy(e.target, async () => {
