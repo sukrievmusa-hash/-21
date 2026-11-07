@@ -106,6 +106,11 @@ begin
     v_j := public.tg_handle_callback(111111, 'c:' || v_tok);
     select status into v_txt from public.bookings where token = v_tok;
     step := 'клиент подтвердил визит кнопкой'; ok := v_txt = 'confirmed'; info := v_txt; return next;
+    select count(*) into v_n from public.notifications where business_id = v_biz and kind = 'owner_confirm' and chat_id = 222222;
+    step := 'мастеру пришло «клиент подтвердил»'; ok := v_n = 1; info := v_n::text; return next;
+    perform public.tg_handle_callback(111111, 'c:' || v_tok);
+    select count(*) into v_n from public.notifications where business_id = v_biz and kind = 'owner_confirm';
+    step := 'повторное нажатие не дублирует уведомление'; ok := v_n = 1; info := v_n::text; return next;
 
     -- 4б. вопросы клиентов и ИИ-ассистент
     v_j := public.tg_route_text(111111, 'Сколько стоит стрижка?', 'Клиент Тест', null);
