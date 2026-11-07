@@ -206,15 +206,23 @@ export async function busy(btn, fn) {
 
 export function copyText(text) {
   const done = () => toast('Скопировано');
-  if (navigator.clipboard && window.isSecureContext) return navigator.clipboard.writeText(text).then(done).catch(() => fallback());
-  fallback();
-  function fallback() {
+  const fallback = () => {
     const ta = document.createElement('textarea');
-    ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
-    document.body.append(ta); ta.select();
-    try { document.execCommand('copy'); done(); } catch { toast('Не удалось скопировать', 'err'); }
+    ta.value = text;
+    ta.setAttribute('readonly', '');
+    ta.style.cssText = 'position:fixed;top:0;left:0;width:1px;height:1px;opacity:0;font-size:16px';
+    document.body.append(ta);
+    ta.focus(); ta.select(); ta.setSelectionRange(0, text.length);
+    let ok = false;
+    try { ok = document.execCommand('copy'); } catch { ok = false; }
     ta.remove();
-  }
+    if (ok) return done();
+    // Совсем старый браузер: показываем ссылку, чтобы скопировать вручную
+    const m = modal({ title: 'Скопируйте вручную', body: `<p class="muted small">Нажмите на текст и удерживайте, затем «Скопировать».</p><textarea class="textarea" rows="3" readonly>${esc(text)}</textarea>` });
+    const t = m.el.querySelector('textarea'); t.focus(); t.select();
+  };
+  if (navigator.clipboard && window.isSecureContext) return navigator.clipboard.writeText(text).then(done).catch(fallback);
+  fallback();
 }
 
 export function qrDataUrl(text, size = 600) {

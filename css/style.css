@@ -220,6 +220,14 @@ table.table { width: 100%; border-collapse: collapse; font-size: 14px; }
 .link-box { display: flex; gap: 8px; }
 .link-box .input { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; }
 @media (max-width: 560px) { .link-box { flex-direction: column; } }
+.share-bar { display: flex; align-items: center; gap: 10px; padding: 12px 14px; margin-bottom: 14px; border-color: var(--pri-soft); background: var(--pri-tint); }
+.share-url { display: block; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.share { display: grid; gap: 14px; justify-items: center; }
+.share-qr { width: 220px; height: 220px; border: 1px solid var(--line); border-radius: 12px; background: #fff; }
+.share .link-box { width: 100%; }
+.share-btns { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; width: 100%; }
+.share-btns .btn { width: 100%; }
+@media (max-width: 560px) { .share-bar { flex-wrap: wrap; } .share-bar > .grow { flex-basis: 100%; } .share-bar .btn { flex: 1; } }
 
 .plan { border: 2px solid var(--line); border-radius: var(--r); padding: 18px; cursor: pointer; background: #fff; position: relative; }
 .plan.sel { border-color: var(--pri); background: var(--pri-tint); }
@@ -328,3 +336,4 @@ footer.foot { padding: 30px 0 40px; color: var(--muted); font-size: 14px; }
 .msg.user { align-self: flex-end; background: var(--pri); border-color: var(--pri); color: #fff; }
 .msg.owner { background: var(--warn-soft); border-color: #fde68a; }
 .msg .t { font-size: 11px; opacity: .65; margin-top: 3px; }
+.share-btns > .btn:last-child:nth-child(odd) { grid-column: 1 / -1; }

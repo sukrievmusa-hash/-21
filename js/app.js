@@ -11,7 +11,7 @@ const S = {
   user: null, biz: null, settings: {}, plans: [], staff: [], services: [], links: [], hours: [],
   day: null, view: store.get('kezek_view', 'grid'), dayBookings: [],
 };
-const TABS = [['journal', 'Журнал'], ['clients', 'Клиенты'], ['services', 'Услуги'], ['staff', 'Сотрудники'], ['ai', 'ИИ-ассистент'], ['settings', 'Настройки'], ['billing', 'Подписка']];
+const TABS = [['journal', 'Журнал'], ['clients', 'Клиенты'], ['services', 'Услуги'], ['staff', 'Сотрудники'], ['settings', 'Настройки'], ['ai', 'ИИ-ассистент'], ['billing', 'Подписка']];
 const CATS = ['Барбершоп', 'Салон красоты', 'Ногтевая студия', 'Брови и ресницы', 'Массаж', 'Косметология', 'Репетитор / курсы',
   'Автомойка / детейлинг', 'Фото / видео студия', 'Медицина / стоматология', 'Психолог / консультант', 'Фитнес / тренер', 'Другое'];
 const TEMPLATES = {
@@ -154,13 +154,14 @@ function renderShell() {
       <div class="container">
         <a class="logo" href="index.html"><i>K</i><span>${esc(BRAND)}</span></a>
         <span class="biz grow" id="bizName">${esc(S.biz.name)}</span>
-        <a class="btn btn-sm" target="_blank" rel="noopener" href="${esc(bookUrl())}">Моя страница ↗</a>
+        <button class="btn btn-sm btn-pri" id="shareBtn" title="Ссылка для записи, QR-код, отправить клиентам">🔗 Ссылка и QR</button>
         <button class="btn btn-sm btn-ghost" id="logout" title="Выйти">Выйти</button>
       </div>
       <div class="container"><nav class="tabs">${TABS.map(([k, t]) => `<a class="tab" href="#${k}" data-t="${k}">${t}</a>`).join('')}</nav></div>
     </header>
     <div class="container"><div id="banner" style="margin-top:14px"></div><main class="page" id="page"></main></div>`;
   $('#logout').onclick = () => sb.auth.signOut();
+  $('#shareBtn').onclick = () => shareModal();
 }
 
 function route() {
@@ -185,6 +186,58 @@ function renderBanner() {
   else b.innerHTML = '';
 }
 
+// ---------- Ссылка для записи: скопировать, QR, отправить ----------
+const shortUrl = (u) => u.replace(/^https?:\/\//, '');
+const tgShareUrl = () => `https://t.me/share/url?url=${encodeURIComponent(bookUrl())}&text=${encodeURIComponent(`Записаться онлайн в «${S.biz.name}»`)}`;
+function selectOnTap(input) {
+  if (!input) return;
+  const sel = () => { input.focus(); input.setSelectionRange(0, input.value.length); };
+  input.addEventListener('click', sel); input.addEventListener('focus', sel);
+}
+async function nativeShare() {
+  try {
+    await navigator.share({ title: S.biz.name, text: `Записаться онлайн в «${S.biz.name}»`, url: bookUrl() });
+    onbFlag('shared');
+  } catch { /* пользователь закрыл окно */ }
+}
+function shareBarHtml() {
+  const url = bookUrl();
+  return `<div class="card share-bar"><div class="grow" style="min-width:0">
+      <div class="muted small">Ссылка для записи клиентов</div>
+      <a class="share-url" href="${esc(url)}" target="_blank" rel="noopener">${esc(shortUrl(url))}</a></div>
+    <button class="btn btn-sm btn-pri" id="sbCopy">Скопировать</button>
+    <button class="btn btn-sm" id="sbQr">QR и отправить</button></div>`;
+}
+function bindShareBar() {
+  $('#sbCopy') && ($('#sbCopy').onclick = () => { copyText(bookUrl()); onbFlag('shared'); });
+  $('#sbQr') && ($('#sbQr').onclick = () => shareModal());
+  $$('a[href="#share"]').forEach((a) => { a.onclick = (e) => { e.preventDefault(); shareModal(); }; });
+}
+function shareModal() {
+  const url = bookUrl(), qr = qrDataUrl(url);
+  const text = `Записаться онлайн в «${S.biz.name}»: ${url}`;
+  const m = modal({ title: 'Ссылка для записи', body: `<div class="share">
+      <img class="share-qr" src="${qr}" alt="QR-код для записи">
+      <div class="link-box"><input class="input grow" readonly value="${esc(url)}" id="shUrl"><button class="btn btn-pri" id="shCopy">Скопировать</button></div>
+      <div class="share-btns">
+        ${navigator.share ? '<button class="btn" id="shNative">Поделиться…</button>' : ''}
+        <a class="btn btn-wa" target="_blank" rel="noopener" href="https://wa.me/?text=${encodeURIComponent(text)}">WhatsApp</a>
+        <a class="btn" target="_blank" rel="noopener" href="${esc(tgShareUrl())}">Telegram</a>
+        <button class="btn" id="shText">Скопировать с текстом</button>
+        <a class="btn" href="${qr}" download="qr-${esc(S.biz.slug)}.png" id="shDl">Скачать QR</a>
+        <a class="btn" href="${esc(url)}" target="_blank" rel="noopener">Открыть страницу ↗</a>
+      </div>
+      <p class="muted small" style="margin:0">Ссылку поставьте в шапку Instagram, в WhatsApp Business и 2GIS. QR распечатайте на стойку или зеркало. На телефоне QR можно сохранить долгим нажатием на картинку.</p>
+    </div>` });
+  const el = m.el;
+  selectOnTap($('#shUrl', el));
+  $('#shCopy', el).onclick = () => { copyText(url); onbFlag('shared'); };
+  $('#shText', el).onclick = () => { copyText(text); onbFlag('shared'); };
+  $('#shDl', el).addEventListener('click', () => onbFlag('shared'));
+  $$('.btn-wa, [href^="https://t.me/share"]', el).forEach((a) => a.addEventListener('click', () => onbFlag('shared')));
+  $('#shNative', el) && ($('#shNative', el).onclick = () => nativeShare());
+}
+
 // ---------- Журнал ----------
 function checklistHtml() {
   const k = 'kezek_onb_' + S.biz.id;
@@ -194,7 +247,7 @@ function checklistHtml() {
     [S.services.length > 0, '#services', 'Добавьте услуги и цены'],
     [!!st.hours, '#staff', 'Проверьте график работы сотрудников'],
     [!!S.biz.tg_chat_id, '#settings', 'Подключите уведомления о записях в Telegram'],
-    [!!st.shared, '#settings', 'Разместите ссылку для записи в Instagram, WhatsApp и 2GIS'],
+    [!!st.shared, '#share', 'Разместите ссылку для записи в Instagram, WhatsApp и 2GIS'],
   ];
   if (items.every((i) => i[0])) return '';
   const done = items.filter((i) => i[0]).length;
@@ -209,7 +262,7 @@ function onbFlag(key) {
 
 function renderJournal() {
   if (!S.day) S.day = todayInTz(tz());
-  $('#page').innerHTML = `${checklistHtml()}
+  $('#page').innerHTML = `${checklistHtml()}${shareBarHtml()}
     <div class="page-h">
       <div class="day-nav">
         <button class="btn btn-sm" id="prev" aria-label="Предыдущий день">‹</button>
@@ -226,6 +279,7 @@ function renderJournal() {
     <div class="grid grid-4 keep-2" id="kpi" style="margin-bottom:14px"></div>
     <div id="jr"><div class="spinner"></div></div>`;
   $('#hideOnb') && ($('#hideOnb').onclick = () => { onbFlag('hidden'); renderJournal(); });
+  bindShareBar();
   $('#prev').onclick = () => { S.day = addDays(S.day, -1); drawDay(); };
   $('#next').onclick = () => { S.day = addDays(S.day, 1); drawDay(); };
   $('#today').onclick = () => { S.day = todayInTz(tz()); drawDay(); };
@@ -764,7 +818,9 @@ function renderSettings() {
         <div class="link-box"><input class="input grow" readonly value="${esc(url)}" id="url"><button class="btn btn-pri" id="copy">Скопировать</button></div>
         <div class="row"><a class="btn btn-sm" href="${esc(url)}" target="_blank" rel="noopener">Открыть ↗</a>
           <a class="btn btn-sm" id="qrdl" download="qr-zapis.png">Скачать QR</a>
-          <a class="btn btn-sm btn-wa" target="_blank" rel="noopener" href="https://wa.me/?text=${encodeURIComponent(shareText)}">Отправить в WhatsApp</a></div>
+          <a class="btn btn-sm btn-wa" target="_blank" rel="noopener" href="https://wa.me/?text=${encodeURIComponent(shareText)}">Отправить в WhatsApp</a>
+          <a class="btn btn-sm" target="_blank" rel="noopener" href="${esc(tgShareUrl())}">В Telegram</a>
+          ${navigator.share ? '<button class="btn btn-sm" id="nshare">Поделиться…</button>' : ''}</div>
         <p class="muted small" style="margin:0">Куда поставить: шапка профиля Instagram, кнопка в WhatsApp Business, карточка в 2GIS, автоответ в мессенджерах. QR-код распечатайте на стойку или зеркало.</p>
       </div></div></div>
 
@@ -796,6 +852,8 @@ function renderSettings() {
   const qr = qrDataUrl(url);
   $('#qr').src = qr; $('#qrdl').href = qr;
   $('#copy').onclick = () => { copyText(url); onbFlag('shared'); };
+  selectOnTap($('#url'));
+  $('#nshare') && ($('#nshare').onclick = () => nativeShare());
   $('#qrdl').addEventListener('click', () => onbFlag('shared'));
   $('#lo2').onclick = () => sb.auth.signOut();
   $('#pw').onclick = () => {
