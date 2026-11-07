@@ -130,6 +130,7 @@ begin
     perform public.tg_handle_callback(222222, 'a:111111');
     perform set_config('role', 'none', true);
     update public.business_ai set enabled = true where business_id = v_biz;
+    update public.businesses set plan = 'premium' where id = v_biz;  -- ИИ есть только на тарифе с ИИ
     select ai_api_key into v_key from private.secrets where id = 1;
     update private.secrets set ai_api_key = coalesce(v_key, 'sk-ant-selftest') where id = 1;
     perform set_config('role', 'service_role', true);
@@ -138,6 +139,9 @@ begin
     update private.secrets set ai_api_key = v_key where id = 1;
     perform set_config('role', 'service_role', true);
     step := 'с ИИ вопрос идёт ассистенту'; ok := v_j->>'mode' = 'ai'; info := v_j::text; return next;
+    perform set_config('role', 'none', true);
+    update public.businesses set plan = 'trial' where id = v_biz;
+    perform set_config('role', 'service_role', true);
     v_j := public.ai_context(v_biz, 111111);
     step := 'ассистент видит услуги, базу знаний и историю';
     ok := jsonb_array_length(v_j->'services') = 1 and v_j->'ai'->>'knowledge' like '%парковка%' and jsonb_array_length(v_j->'history') >= 4;
