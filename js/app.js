@@ -97,7 +97,7 @@ async function loadRefs() {
 // ---------- Онбординг ----------
 function renderOnboarding() {
   root.innerHTML = `<div class="auth-wrap"><div class="auth-card" style="max-width:540px">
-    <div class="center" style="margin-bottom:18px"><span class="logo"><i>K</i><span>${esc(BRAND)}</span></span></div>
+    <div class="center" style="margin-bottom:18px"><span class="logo"><i>J</i><span>${esc(BRAND)}</span></span></div>
     <div class="card"><form id="of" class="stack" novalidate>
       <div><h2 style="margin-bottom:4px">Расскажите о бизнесе</h2><p class="muted small" style="margin:0">Это займёт минуту. Всё можно изменить позже.</p></div>
       <label class="field"><span>Название</span><input class="input" name="name" required maxlength="80" placeholder="Например: Барбершоп «Сарбаз»"></label>
@@ -152,7 +152,7 @@ function renderShell() {
   root.innerHTML = `
     <header class="topbar">
       <div class="container">
-        <a class="logo" href="index.html"><i>K</i><span>${esc(BRAND)}</span></a>
+        <a class="logo" href="index.html"><i>J</i><span>${esc(BRAND)}</span></a>
         <span class="biz grow" id="bizName">${esc(S.biz.name)}</span>
         <button class="btn btn-sm btn-pri" id="shareBtn" title="Ссылка для записи, QR-код, отправить клиентам">🔗 Ссылка и QR</button>
         <button class="btn btn-sm btn-ghost" id="logout" title="Выйти">Выйти</button>
