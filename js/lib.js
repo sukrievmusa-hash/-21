@@ -259,3 +259,6 @@ export function slugify(s) {
 export function brandify(root = document) {
   $$('[data-brand]', root).forEach((el) => { el.textContent = BRAND; });
 }
+
+// Предоплата: сумма от цены услуги (округление до тенге)
+export const prepayAmount = (price, percent) => (price == null ? null : Math.round((Number(price) * Number(percent)) / 100));
