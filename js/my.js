@@ -1,4 +1,4 @@
-import { sb, $, esc, money, toast, toastErr, confirmDlg, humanDate, dateStrInTz, timeStrInTz, telLink, pageUrl, brandify } from './lib.js';
+import { sb, $, esc, money, toast, toastErr, confirmDlg, humanDate, dateStrInTz, timeStrInTz, telLink, pageUrl, brandify, prepayAmount } from './lib.js';
 
 const params = new URLSearchParams(location.search);
 const token = params.get('t') || '';
@@ -47,6 +47,15 @@ function render() {
          <a class="btn btn-tg btn-block" target="_blank" rel="noopener" href="https://t.me/${esc(B.bot_username)}?start=b_${esc(B.token)}">🔔 Напомнить в Telegram</a></div>`)
     : '';
 
+  const prepayBlock = !cancelled && !past && z.prepay_enabled ? (() => {
+    const pre = prepayAmount(B.price, z.prepay_percent);
+    const where = z.prepay_details
+      ? esc(z.prepay_details).replace(/\n/g, '<br>')
+      : z.phone ? `Уточните реквизиты по телефону <a href="${telLink(z.phone)}">${esc(z.phone)}</a>` : 'Реквизиты уточните у администратора.';
+    return `<div class="alert alert-warn stack" style="gap:6px"><div><b>💳 Нужна предоплата ${z.prepay_percent}%${pre != null ? ` — ${money(pre)}` : ' от стоимости услуги'}</b></div>
+      <div>${where}</div></div>`;
+  })() : '';
+
   app.innerHTML = `${head}
     <dl class="kv" style="margin:18px 0">
       <dt>Когда</dt><dd>${humanDate(day)}, ${time}</dd>
@@ -57,6 +66,7 @@ function render() {
       <dt>На имя</dt><dd>${esc(B.client_name)}</dd>
     </dl>
     <div class="stack">
+      ${prepayBlock}
       ${tgBlock}
       ${!cancelled && !past ? `<div class="grid grid-2">
         <button class="btn" id="ics">📅 В календарь</button>
