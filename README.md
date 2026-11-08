@@ -10,10 +10,10 @@ SaaS по подписке для малого бизнеса: салоны, б�
 
 | Страница | Ссылка |
 |---|---|
-| Лендинг для продаж | https://sukrievmusa-hash.github.io/-21/ |
-| Демо-страница записи | https://sukrievmusa-hash.github.io/-21/book.html?b=demo |
-| Кабинет бизнеса | https://sukrievmusa-hash.github.io/-21/app.html |
-| Админка платформы (ваша) | https://sukrievmusa-hash.github.io/-21/admin.html |
+| Лендинг для продаж | https://jazylam.kz/ |
+| Демо-страница записи | https://jazylam.kz/book.html?b=demo |
+| Кабинет бизнеса | https://jazylam.kz/app.html |
+| Админка платформы (ваша) | https://jazylam.kz/admin.html |
 
 ## Запуск
 
