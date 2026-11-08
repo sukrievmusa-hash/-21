@@ -3,7 +3,7 @@ import { sb, $, $$, esc, toast, toastErr, BRAND } from './lib.js';
 
 export function renderAuth(root, { mode = 'login', onDone, allowSignup = true, title } = {}) {
   root.innerHTML = `<div class="auth-wrap"><div class="auth-card">
-    <div class="center" style="margin-bottom:18px"><a class="logo" href="index.html"><i>K</i><span>${esc(BRAND)}</span></a></div>
+    <div class="center" style="margin-bottom:18px"><a class="logo" href="index.html"><i>J</i><span>${esc(BRAND)}</span></a></div>
     <div class="card">
       ${allowSignup ? '<div class="seg"><button type="button" data-m="login">Вход</button><button type="button" data-m="signup">Регистрация</button></div>' : ''}
       <form id="af" class="stack" novalidate>

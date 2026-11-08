@@ -89,8 +89,8 @@ function render() {
     ics.onclick = () => {
       const esc2 = (s) => String(s || '').replace(/([,;\\])/g, '\\$1').replace(/\n/g, '\\n');
       const body = [
-        'BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Kezek//Booking//RU', 'CALSCALE:GREGORIAN', 'METHOD:PUBLISH',
-        'BEGIN:VEVENT', `UID:${B.token}@kezek`, `DTSTAMP:${icsDate(Date.now())}`,
+        'BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Jazylam//Booking//RU', 'CALSCALE:GREGORIAN', 'METHOD:PUBLISH',
+        'BEGIN:VEVENT', `UID:${B.token}@jazylam`, `DTSTAMP:${icsDate(Date.now())}`,
         `DTSTART:${icsDate(B.starts_at)}`, `DTEND:${icsDate(B.ends_at)}`,
         `SUMMARY:${esc2(title)}`, z.address ? `LOCATION:${esc2(z.address)}` : '',
         `DESCRIPTION:${esc2(location.href.replace(/[?&]new=1/, ''))}`,
