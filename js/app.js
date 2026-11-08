@@ -844,6 +844,8 @@ function renderSettings() {
         <div class="full"><button class="btn btn-pri" type="submit">Сохранить</button></div>
       </form></div>
 
+    <div class="card"><h3>💳 Запись по предоплате</h3><div id="prepay"></div></div>
+
     <div class="card"><h3>Праздники и выходные для всех</h3><p class="muted small">В эти дни онлайн-запись закрыта для всех сотрудников.</p><div id="off"></div></div>
 
     <div class="card"><h3>Аккаунт</h3><p class="muted">Вход: ${esc(S.user.email)}</p>
@@ -868,6 +870,7 @@ function renderSettings() {
   };
   timeOffEditor($('#off'), null);
   renderTg();
+  renderPrepay();
 
   const f = $('#pf');
   f.onsubmit = async (e) => {
@@ -888,6 +891,61 @@ function renderSettings() {
       await reloadBiz(); $('#bizName').textContent = S.biz.name; toast('Сохранено'); renderSettings();
     });
   };
+
+  function renderPrepay() {
+    const box = $('#prepay'), on = !!S.biz.prepay_enabled;
+    const pct = S.biz.prepay_percent || 30, details = S.biz.prepay_details || '';
+    const example = (p) => `Пример: услуга за ${money(10000)} → клиент платит заранее <b>${money(Math.round(100 * p))}</b>, остальное на месте.`;
+    box.innerHTML = `
+      <label class="switch-row">
+        <span class="grow"><b>Предоплата при онлайн-записи</b><br>
+          <span class="muted small">Клиент при записи увидит, сколько нужно оплатить заранее и куда перевести. Функцию можно включить и выключить в любой момент этим переключателем.</span></span>
+        <span class="sw-state ${on ? 'on' : 'off'}">${on ? 'ВКЛ' : 'ВЫКЛ'}</span>
+        <span class="switch"><input type="checkbox" id="ppOn" aria-label="Предоплата" ${on ? 'checked' : ''}><i></i></span>
+      </label>
+      <div class="alert ${on ? 'alert-ok' : 'alert-info'}" style="margin:12px 0 0">${on
+        ? `✅ <b>Включено.</b> Клиенты видят предоплату ${pct}% от стоимости услуги.`
+        : '⏸ <b>Выключено.</b> Клиенты записываются без предоплаты. Нажмите на переключатель, чтобы включить.'}</div>
+      <form id="ppf" class="form-grid" novalidate style="margin-top:14px;${on ? '' : 'display:none'}">
+        <label class="field"><span>Размер предоплаты, %</span>
+          <input class="input" name="pct" type="number" inputmode="numeric" min="1" max="100" step="1" value="${pct}">
+          <small id="ppEx">${example(pct)}</small></label>
+        <div class="field"><span>Быстрый выбор</span><div class="row">${[10, 20, 30, 50, 100].map((v) => `<button type="button" class="btn btn-sm" data-pct="${v}">${v}%</button>`).join('')}</div></div>
+        <label class="field full"><span>Куда переводить предоплату</span>
+          <textarea class="textarea" name="details" maxlength="300" rows="2" placeholder="Например: Kaspi Gold +7 707 000 00 00 (Айгерим А.). В комментарии укажите имя и время записи">${esc(details)}</textarea>
+          <small>Этот текст клиент увидит после записи.</small></label>
+        ${!details ? '<div class="full alert alert-warn">Укажите, куда переводить. Пока поле пустое, клиенту будет показан только ваш телефон.</div>' : ''}
+        <div class="full"><button class="btn btn-pri" type="submit">Сохранить предоплату</button></div>
+      </form>`;
+
+    const sw = $('#ppOn');
+    sw.onchange = async () => {
+      const val = sw.checked;
+      sw.disabled = true;
+      const { error } = await sb.from('businesses').update({ prepay_enabled: val }).eq('id', S.biz.id);
+      sw.disabled = false;
+      if (error) { sw.checked = !val; return toastErr(error); }
+      await reloadBiz();
+      toast(val ? 'Предоплата включена' : 'Предоплата выключена');
+      renderPrepay();
+    };
+
+    const f = $('#ppf');
+    const syncEx = () => { const p = Math.min(100, Math.max(1, Math.round(+f.pct.value || 0))); $('#ppEx').innerHTML = example(p); };
+    f.pct.oninput = syncEx;
+    $$('[data-pct]', f).forEach((btn) => { btn.onclick = () => { f.pct.value = btn.dataset.pct; syncEx(); }; });
+    f.onsubmit = async (e) => {
+      e.preventDefault();
+      const p = Math.round(+f.pct.value);
+      if (!(p >= 1 && p <= 100)) { f.pct.focus(); return toastErr('Процент предоплаты — от 1 до 100'); }
+      await busy($('button[type=submit]', f), async () => {
+        const { error } = await sb.from('businesses')
+          .update({ prepay_percent: p, prepay_details: f.details.value.trim() || null }).eq('id', S.biz.id);
+        if (error) return toastErr(error);
+        await reloadBiz(); toast('Сохранено'); renderPrepay();
+      });
+    };
+  }
 
   function renderTg() {
     const box = $('#tg');

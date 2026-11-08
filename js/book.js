@@ -1,6 +1,6 @@
 import {
   sb, $, $$, esc, money, durText, toastErr, phoneMask, normPhone, fmtPhone, todayInTz, addDays,
-  isoWeekday, WD_SHORT, MONTHS_SHORT, humanDate, timeStrInTz, minutesInTz, pageUrl, store, telLink, brandify,
+  isoWeekday, WD_SHORT, MONTHS_SHORT, humanDate, timeStrInTz, minutesInTz, pageUrl, store, telLink, brandify, prepayAmount,
 } from './lib.js';
 
 const slug = new URLSearchParams(location.search).get('b') || '';
@@ -69,7 +69,9 @@ function eligibleStaff() {
 // Шаг 1 — услуга
 function stepService() {
   S.service = null; S.staffChosen = false; S.slot = null;
-  app.innerHTML = `${bar(1)}<h2>Выберите услугу</h2><div id="list"></div>`;
+  const pp = S.biz.prepay_enabled
+    ? `<div class="alert alert-info" style="margin-bottom:12px">💳 Запись по предоплате ${S.biz.prepay_percent}% от стоимости услуги</div>` : '';
+  app.innerHTML = `${bar(1)}<h2>Выберите услугу</h2>${pp}<div id="list"></div>`;
   const list = $('#list');
   for (const s of S.biz.services) {
     const btn = document.createElement('button');
@@ -175,6 +177,23 @@ async function pickDay(d) {
   }
 }
 
+// Стоимость: без предоплаты — как раньше; с предоплатой — сумма заранее и остаток
+function priceRows() {
+  const price = S.service.price;
+  if (!S.biz.prepay_enabled) {
+    return price != null ? `<div class="row between"><span class="muted">К оплате на месте</span><b>${money(price)}</b></div>` : '';
+  }
+  const pct = S.biz.prepay_percent;
+  if (price == null) {
+    return `<div class="alert alert-warn">💳 Нужна предоплата ${pct}% от стоимости услуги. Куда перевести — покажем после записи.</div>`;
+  }
+  const pre = prepayAmount(price, pct);
+  return `<div class="alert alert-warn stack" style="gap:6px">
+      <div class="row between"><span>💳 Предоплата ${pct}%</span><b>${money(pre)}</b></div>
+      ${pre < price ? `<div class="row between"><span class="muted">Остаток на месте</span><b>${money(price - pre)}</b></div>` : ''}
+      <span class="small">Куда перевести — покажем сразу после записи.</span></div>`;
+}
+
 // Шаг 4 — контакты
 function stepForm() {
   const saved = store.get('kezek_client', {});
@@ -184,7 +203,7 @@ function stepForm() {
       <label class="field"><span>Телефон</span><input class="input" name="phone" type="tel" inputmode="tel" autocomplete="tel" required placeholder="+7 (___) ___-__-__"></label>
       <label class="field"><span>Комментарий <span class="muted">(необязательно)</span></span><textarea class="textarea" name="comment" maxlength="500" rows="2"></textarea></label>
       <label class="check small"><input type="checkbox" name="agree" checked> <span>Согласен(на) на обработку персональных данных согласно <a href="terms.html#privacy" target="_blank">политике конфиденциальности</a></span></label>
-      ${S.service.price != null ? `<div class="row between"><span class="muted">К оплате на месте</span><b>${money(S.service.price)}</b></div>` : ''}
+      ${priceRows()}
       <button class="btn btn-pri btn-lg btn-block" type="submit">Записаться</button>
       <button class="btn btn-ghost btn-block" type="button" id="back">← Изменить время</button>
     </form>`;
