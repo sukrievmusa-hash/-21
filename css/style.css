@@ -351,3 +351,13 @@ footer.foot { padding: 30px 0 40px; color: var(--muted); font-size: 14px; }
 .sw-state { font-weight: 800; font-size: 13px; min-width: 64px; text-align: right; }
 .sw-state.on { color: var(--pri-h); }
 .sw-state.off { color: #64748b; }
+
+/* ---------- Фото работ и товаров ---------- */
+.ph-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px}
+.ph-item{position:relative;display:block;padding:0;border:1px solid var(--line,#e2e8f0);border-radius:12px;overflow:hidden;background:#fff;text-align:left;font:inherit;color:inherit}
+.ph-item img{display:block;width:100%;aspect-ratio:1/1;object-fit:cover;background:#f1f5f9}
+.ph-cap{display:flex;flex-direction:column;gap:2px;padding:8px 10px;font-size:13px}
+.ph-act{display:flex;gap:6px;padding:0 8px 8px;flex-wrap:wrap}
+.ph-pub .ph-item{cursor:pointer}
+.ph-view{position:fixed;inset:0;z-index:1000;background:rgba(15,23,42,.92);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;padding:16px;color:#fff;text-align:center}
+.ph-view img{max-width:100%;max-height:78vh;border-radius:10px;object-fit:contain}
