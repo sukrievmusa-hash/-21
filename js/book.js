@@ -1,6 +1,6 @@
 import {
   sb, $, $$, esc, money, durText, toastErr, phoneMask, normPhone, fmtPhone, todayInTz, addDays,
-  isoWeekday, WD_SHORT, MONTHS_SHORT, humanDate, timeStrInTz, minutesInTz, pageUrl, store, telLink, brandify, prepayAmount,
+  isoWeekday, WD_SHORT, MONTHS_SHORT, humanDate, timeStrInTz, minutesInTz, pageUrl, store, telLink, brandify, prepayAmount, photoUrl,
 } from './lib.js';
 
 const slug = new URLSearchParams(location.search).get('b') || '';
@@ -66,12 +66,37 @@ function eligibleStaff() {
   return ids.length ? S.biz.staff.filter((s) => ids.includes(s.id)) : S.biz.staff;
 }
 
+// Галерея работ и товаров (если владелец добавил фото)
+function galleryHtml() {
+  const ph = S.biz.photos || [];
+  if (!ph.length) return '';
+  return `<h3 style="margin:22px 0 10px">Наши работы</h3><div class="ph-grid ph-pub">${ph.map((p, i) => `
+    <button type="button" class="ph-item" data-ph="${i}" aria-label="${esc(p.caption || 'Открыть фото')}">
+      <img src="${esc(photoUrl(p.path))}" alt="${esc(p.caption || 'Фото работы')}" loading="lazy">
+      ${p.caption || p.price != null ? `<div class="ph-cap">${p.caption ? `<b>${esc(p.caption)}</b>` : ''}${p.price != null ? `<span>${money(p.price)}</span>` : ''}</div>` : ''}
+    </button>`).join('')}</div>`;
+}
+function bindGallery() {
+  const ph = S.biz.photos || [];
+  document.querySelectorAll('[data-ph]').forEach((el) => {
+    el.onclick = () => {
+      const p = ph[+el.dataset.ph];
+      const ov = document.createElement('div');
+      ov.className = 'ph-view';
+      ov.innerHTML = `<img src="${esc(photoUrl(p.path))}" alt="">${p.caption || p.price != null ? `<div>${p.caption ? esc(p.caption) : ''}${p.price != null ? ` · ${money(p.price)}` : ''}</div>` : ''}`;
+      ov.onclick = () => ov.remove();
+      document.body.append(ov);
+    };
+  });
+}
+
 // Шаг 1 — услуга
 function stepService() {
   S.service = null; S.staffChosen = false; S.slot = null;
   const pp = S.biz.prepay_enabled
     ? `<div class="alert alert-info" style="margin-bottom:12px">💳 Запись по предоплате ${S.biz.prepay_percent}% от стоимости услуги</div>` : '';
-  app.innerHTML = `${bar(1)}<h2>Выберите услугу</h2>${pp}<div id="list"></div>`;
+  app.innerHTML = `${bar(1)}<h2>Выберите услугу</h2>${pp}<div id="list"></div>${galleryHtml()}`;
+  bindGallery();
   const list = $('#list');
   for (const s of S.biz.services) {
     const btn = document.createElement('button');

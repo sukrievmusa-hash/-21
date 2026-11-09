@@ -2,7 +2,7 @@ import {
   sb, $, $$, esc, money, toast, toastErr, errMsg, modal, confirmDlg, busy, copyText, qrDataUrl, store,
   normPhone, fmtPhone, phoneMask, waLink, telLink, zonedToUtc, dateStrInTz, timeStrInTz, minutesInTz,
   todayInTz, addDays, isoWeekday, WD_SHORT, WD_FULL, humanDate, humanDateTime, fmtDateShort, minsToHHMM,
-  durText, plural, statusBadge, STATUS, slugify, pageUrl, BRAND, INITIAL_HASH,
+  durText, plural, statusBadge, STATUS, slugify, pageUrl, BRAND, INITIAL_HASH, photoUrl, resizeImage,
 } from './lib.js';
 import { renderAuth, renderNewPassword } from './auth.js';
 
@@ -846,6 +846,8 @@ function renderSettings() {
 
     <div class="card"><h3>💳 Запись по предоплате</h3><div id="prepay"></div></div>
 
+    <div class="card"><h3>📸 Фото работ и товаров</h3><div id="photos"></div></div>
+
     <div class="card"><h3>Праздники и выходные для всех</h3><p class="muted small">В эти дни онлайн-запись закрыта для всех сотрудников.</p><div id="off"></div></div>
 
     <div class="card"><h3>Аккаунт</h3><p class="muted">Вход: ${esc(S.user.email)}</p>
@@ -871,6 +873,7 @@ function renderSettings() {
   timeOffEditor($('#off'), null);
   renderTg();
   renderPrepay();
+  renderPhotos();
 
   const f = $('#pf');
   f.onsubmit = async (e) => {
@@ -945,6 +948,87 @@ function renderSettings() {
         await reloadBiz(); toast('Сохранено'); renderPrepay();
       });
     };
+  }
+
+  async function renderPhotos() {
+    const box = $('#photos');
+    if (!box) return;
+    const MAX = 24;
+    const { data, error } = await sb.from('business_photos').select('*').eq('business_id', S.biz.id).order('sort').order('created_at');
+    if (error) {
+      box.innerHTML = '<p class="muted">Фото пока недоступны. Попробуйте обновить страницу позже.</p>';
+      return;
+    }
+    const list = data || [];
+    box.innerHTML = `
+      <p class="muted small" style="margin-top:0">Покажите клиентам свои работы: причёски, маникюр, товары. Фото появятся на странице онлайн-записи. Можно добавить подпись и цену.</p>
+      <div class="ph-grid" id="phGrid">${list.map((p) => `
+        <div class="ph-item" data-id="${p.id}">
+          <img src="${esc(photoUrl(p.path))}" alt="${esc(p.caption || 'Фото')}" loading="lazy">
+          <div class="ph-cap">${p.caption ? `<b>${esc(p.caption)}</b>` : '<span class="muted small">без подписи</span>'}${p.price != null ? `<span>${money(p.price)}</span>` : ''}</div>
+          <div class="ph-act"><button class="btn btn-sm" data-edit="${p.id}">Подпись</button><button class="btn btn-sm btn-ghost" data-del="${p.id}">Удалить</button></div>
+        </div>`).join('')}</div>
+      ${list.length ? '' : '<div class="empty" style="padding:16px 0"><div class="ico">🖼</div><p class="muted">Пока нет фото</p></div>'}
+      <input type="file" id="phFile" accept="image/*" multiple hidden>
+      <div class="row" style="margin-top:12px"><button class="btn btn-pri" id="phAdd" ${list.length >= MAX ? 'disabled' : ''}>+ Добавить фото</button>
+        <span class="muted small">${list.length} из ${MAX}</span></div>`;
+
+    const fileInput = $('#phFile');
+    $('#phAdd').onclick = () => fileInput.click();
+    fileInput.onchange = async () => {
+      const files = [...fileInput.files].slice(0, MAX - list.length);
+      fileInput.value = '';
+      if (!files.length) return;
+      const btn = $('#phAdd');
+      await busy(btn, async () => {
+        let ok = 0;
+        for (const file of files) {
+          try {
+            const blob = await resizeImage(file);
+            const path = `${S.biz.id}/${crypto.randomUUID()}.jpg`;
+            const up = await sb.storage.from('photos').upload(path, blob, { contentType: 'image/jpeg', cacheControl: '31536000' });
+            if (up.error) throw up.error;
+            const ins = await sb.from('business_photos').insert({ business_id: S.biz.id, path, sort: list.length + ok });
+            if (ins.error) { await sb.storage.from('photos').remove([path]); throw ins.error; }
+            ok++;
+          } catch (e) { toastErr(e); }
+        }
+        if (ok) toast(ok === 1 ? 'Фото добавлено' : `Добавлено фото: ${ok}`);
+        renderPhotos();
+      });
+    };
+
+    $$('[data-del]', box).forEach((b) => {
+      b.onclick = async () => {
+        const p = list.find((x) => x.id === b.dataset.del);
+        if (!p || !(await confirmDlg('Удалить это фото?', 'Удалить', true))) return;
+        const { error: e1 } = await sb.from('business_photos').delete().eq('id', p.id);
+        if (e1) return toastErr(e1);
+        await sb.storage.from('photos').remove([p.path]);
+        toast('Фото удалено'); renderPhotos();
+      };
+    });
+    $$('[data-edit]', box).forEach((b) => {
+      b.onclick = () => {
+        const p = list.find((x) => x.id === b.dataset.edit);
+        if (!p) return;
+        const m = modal({
+          title: 'Подпись к фото',
+          body: `<img src="${esc(photoUrl(p.path))}" alt="" style="width:100%;max-height:220px;object-fit:cover;border-radius:10px;margin-bottom:12px">
+            <label class="field"><span>Подпись</span><input class="input" id="phC" maxlength="100" value="${esc(p.caption || '')}" placeholder="Например: Фейд + борода"></label>
+            <label class="field"><span>Цена, ₸ (необязательно)</span><input class="input" id="phP" type="number" inputmode="numeric" min="0" value="${p.price ?? ''}"></label>`,
+          footer: '<button class="btn btn-pri" id="phS">Сохранить</button>',
+        });
+        $('#phS', m.el).onclick = async () => {
+          const pv = $('#phP', m.el).value.trim();
+          const price = pv === '' ? null : Math.round(+pv);
+          if (price != null && !(price >= 0)) return toastErr('Цена указана неверно');
+          const { error: e2 } = await sb.from('business_photos').update({ caption: $('#phC', m.el).value.trim() || null, price }).eq('id', p.id);
+          if (e2) return toastErr(e2);
+          m.close(); toast('Сохранено'); renderPhotos();
+        };
+      };
+    });
   }
 
   function renderTg() {

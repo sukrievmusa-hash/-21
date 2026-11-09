@@ -262,3 +262,29 @@ export function brandify(root = document) {
 
 // Предоплата: сумма от цены услуги (округление до тенге)
 export const prepayAmount = (price, percent) => (price == null ? null : Math.round((Number(price) * Number(percent)) / 100));
+
+// ---------- Фото работ и товаров ----------
+export const photoUrl = (path) => `${CONFIG.SUPABASE_URL}/storage/v1/object/public/photos/${path}`;
+
+// Уменьшает фото до 1280 px по длинной стороне и сжимает в JPEG (обычно 100–300 КБ)
+export function resizeImage(file, max = 1280, quality = 0.82) {
+  return new Promise((resolve, reject) => {
+    if (!/^image\//.test(file.type)) return reject(new Error('Выберите файл с фото'));
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      const k = Math.min(1, max / Math.max(img.width, img.height));
+      const c = document.createElement('canvas');
+      c.width = Math.max(1, Math.round(img.width * k));
+      c.height = Math.max(1, Math.round(img.height * k));
+      const ctx = c.getContext('2d');
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(0, 0, c.width, c.height);
+      ctx.drawImage(img, 0, 0, c.width, c.height);
+      c.toBlob((b) => (b ? resolve(b) : reject(new Error('Не удалось обработать фото'))), 'image/jpeg', quality);
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Не удалось открыть фото. Попробуйте JPG или PNG')); };
+    img.src = url;
+  });
+}
