@@ -23,26 +23,27 @@
 
   <header class="hero"><div class="container hero-grid">
     <div>
-      <span class="chip" style="margin-bottom:16px">🇰🇿 Для малого бизнеса Казахстана</span>
-      <h1>Онлайн-запись, которая сама напоминает клиентам о визите</h1>
-      <p class="lead">Клиенты записываются по ссылке в любое время, а бот в Telegram напоминает им за сутки и за 2 часа. Меньше неявок, меньше переписки в WhatsApp — больше записей.</p>
-      <div class="row" style="margin-top:22px">
-        <a class="btn btn-pri btn-lg" href="app.html#signup">Попробовать бесплатно <span class="trial-days">14</span> дней</a>
-        <a class="btn btn-lg" href="book.html?b=demo">Посмотреть демо</a>
+      <span class="chip" style="margin-bottom:16px">🇰🇿 Онлайн-запись для малого бизнеса Казахстана</span>
+      <h1>Клиенты приходят на запись. <span style="color:var(--pri)">Без переписок и неявок.</span></h1>
+      <p class="lead">Клиент сам выбирает время по вашей ссылке. За сутки и за 2 часа ему приходит напоминание в Telegram — одной кнопкой «Приду» или «Отменить».</p>
+      <div style="margin-top:24px">
+        <a class="btn btn-pri btn-lg cta-main" id="mainCta" href="app.html#signup">Попробовать <span class="trial-days">14</span> дней бесплатно →</a>
+        <p class="cta-sub">Страница записи будет готова через 10 минут · <a href="book.html?b=demo">посмотреть демо</a></p>
       </div>
-      <div class="trust"><span>✓ Без карты</span><span>✓ Настройка за 10 минут</span><span>✓ Оплата через Kaspi</span><span>✓ Без автосписаний</span></div>
+      <div class="trust"><span>💳 Без карты</span><span>🇰🇿 Оплата через Kaspi</span><span>⏱ 10 минут</span><span>🚫 Без автосписаний</span></div>
     </div>
-    <div class="phone-mock"><div class="scr">
-      <div style="background:linear-gradient(135deg,#0f766e,#134e4a);color:#fff;padding:16px 14px">
-        <div style="font-weight:800">Барбершоп «Сарбаз»</div><div style="font-size:12px;opacity:.85">Алматы, Абая 10</div></div>
-      <div style="padding:10px 12px 4px;font-weight:700;font-size:14px">Выберите время</div>
-      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;padding:0 12px 12px">
-        <span class="slot" style="padding:7px 0;font-size:13px;text-align:center">10:00</span><span class="slot" style="padding:7px 0;font-size:13px;text-align:center">11:30</span>
-        <span class="slot sel" style="padding:7px 0;font-size:13px;text-align:center">14:00</span><span class="slot" style="padding:7px 0;font-size:13px;text-align:center">16:30</span></div>
-      <div style="background:#d6e4f0;padding:4px 0 2px">
-        <div class="tg-msg">⏰ <b>Напоминаем о записи</b><br>Барбершоп «Сарбаз»<br>📅 12 ноября (ср), 14:00<br>📋 Стрижка + борода<br>👤 Мастер: Алихан</div>
-        <div class="tg-btns"><span>✅ Приду</span><span>❌ Отменить</span></div></div>
-    </div></div>
+
+    <div class="dm" id="dm">
+      <div class="dm-tabs"><button id="dm-tab-a" class="on-a" type="button">😩 Как сейчас</button><button id="dm-tab-b" type="button">✨ С Jazylam</button></div>
+      <p class="dm-cap a" id="dm-cap" aria-live="polite">Ночью вы переписываетесь, вместо того чтобы отдыхать</p>
+      <div class="dm-phones">
+        <div class="dm-ph act" id="dm-pc"><div class="dm-who">👤 Клиент Ерлан</div>
+          <div class="dm-dev"><div class="dm-scr"><div class="dm-bar" id="dm-cbar"></div><div class="dm-body" id="dm-cscene"></div></div></div></div>
+        <div class="dm-ph dim" id="dm-po"><div class="dm-who">💈 Мастер (вы)</div>
+          <div class="dm-dev"><div class="dm-scr"><div class="dm-bar" id="dm-obar"></div><div class="dm-body" id="dm-oscene"></div></div></div></div>
+      </div>
+      <p class="dm-note">Пример · демо-данные</p>
+    </div>
   </div></header>
 
   <section class="section alt"><div class="container">
@@ -125,6 +126,22 @@
     </div>
   </div></footer>
 
+  <div class="sticky-cta" id="stickyCta">
+    <a class="btn btn-pri" href="app.html#signup">Попробовать бесплатно</a>
+    <p>14 дней · без карты · без автосписаний</p>
+  </div>
+
+  <script src="js/hero-demo.js" defer></script>
+  <script>
+    // Закреплённая кнопка на телефоне: показываем, когда главная кнопка ушла за экран
+    (function () {
+      var main = document.getElementById('mainCta'), sticky = document.getElementById('stickyCta');
+      if (!main || !sticky || !('IntersectionObserver' in window)) return;
+      new IntersectionObserver(function (e) {
+        sticky.classList.toggle('show', !e[0].isIntersecting && e[0].boundingClientRect.top < 0);
+      }).observe(main);
+    })();
+  </script>
   <script src="vendor/supabase.js"></script>
   <script type="module">
     import { sb, money, esc, brandify } from './js/lib.js';
