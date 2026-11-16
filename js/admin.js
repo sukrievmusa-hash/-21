@@ -126,7 +126,7 @@ async function businesses() {
       ${rows.map((b) => {
         const exp = new Date(b.paid_until) < new Date();
         return `<tr class="clickable" data-id="${b.id}"><td><b>${esc(b.name)}</b>${b.is_demo ? ' <span class="badge b-booked">демо</span>' : ''}${b.is_blocked ? ' <span class="badge b-rejected">блок</span>' : ''}
-          <div class="muted small">${esc(b.category || '')} · <a href="${esc(pageUrl('book.html', { b: b.slug }))}" target="_blank" data-stop>${esc(b.slug)}</a></div></td>
+          <div class="muted small">${esc(b.category || '')} · <a href="${esc(pageUrl('book.html', { b: b.slug }))}" target="_blank" rel="noopener" data-stop>${esc(b.slug)}</a></div></td>
           <td class="small">${esc(b.email || '—')}<div class="muted">${esc(b.phone || '')}</div></td><td>${esc(planTitle(b.plan))}</td>
           <td class="nowrap" style="${exp ? 'color:var(--danger);font-weight:700' : ''}">${b.is_demo ? '∞' : fmtDateShort(b.paid_until, TZ)}</td>
           <td>${b.staff}</td><td>${b.bookings_30d} <span class="muted small">(${b.online_30d} онлайн)</span></td><td>${b.tg ? '✅' : '—'}</td></tr>`;
@@ -323,14 +323,14 @@ async function settings() {
   function drawTg(info) {
     const box = $('#tg');
     const connected = info?.token_set;
-    box.innerHTML = `${connected ? `<div class="alert alert-ok" style="margin-bottom:12px">✅ Бот подключён: <a href="https://t.me/${esc(info.bot_username)}" target="_blank"><b>@${esc(info.bot_username)}</b></a> <span id="hook" class="small"></span></div>` : ''}
+    box.innerHTML = `${connected ? `<div class="alert alert-ok" style="margin-bottom:12px">✅ Бот подключён: <a href="https://t.me/${esc(info.bot_username)}" target="_blank" rel="noopener"><b>@${esc(info.bot_username)}</b></a> <span id="hook" class="small"></span></div>` : ''}
       <ol class="small" style="padding-left:18px;margin:0 0 12px">
-        <li>Откройте <a href="https://t.me/BotFather" target="_blank">@BotFather</a> в Telegram → <b>/newbot</b> → придумайте имя (например «${esc(BRAND)} Напоминания») и username, оканчивающийся на <b>bot</b>.</li>
+        <li>Откройте <a href="https://t.me/BotFather" target="_blank" rel="noopener">@BotFather</a> в Telegram → <b>/newbot</b> → придумайте имя (например «${esc(BRAND)} Напоминания») и username, оканчивающийся на <b>bot</b>.</li>
         <li>BotFather пришлёт токен вида <code>123456789:AA…</code> — вставьте его ниже.</li></ol>
       <div class="link-box"><input class="input grow" id="tok" placeholder="${connected ? 'Новый токен (если нужно заменить бота)' : 'Токен от @BotFather'}" autocomplete="off">
         <button class="btn btn-pri" id="tokGo">${connected ? 'Заменить' : 'Подключить'}</button></div>
       ${connected ? `<div style="margin-top:16px"><b>Уведомления администратора</b> — о новых регистрациях и заявках на оплату:
-        <div class="row" style="margin-top:8px">${info.admin_chat_connected ? '<span class="badge b-done">подключено</span>' : `<a class="btn btn-tg btn-sm" target="_blank" href="https://t.me/${esc(info.bot_username)}?start=adm_${esc(info.admin_link_code)}">Подключить мой Telegram</a>`}
+        <div class="row" style="margin-top:8px">${info.admin_chat_connected ? '<span class="badge b-done">подключено</span>' : `<a class="btn btn-tg btn-sm" target="_blank" rel="noopener" href="https://t.me/${esc(info.bot_username)}?start=adm_${esc(info.admin_link_code)}">Подключить мой Telegram</a>`}
         <button class="btn btn-sm" id="tgRefresh">Обновить</button>${info.admin_chat_connected ? '<button class="btn btn-sm" id="tgTest">Отправить тест</button>' : ''}</div></div>` : ''}`;
     $('#tokGo').onclick = async (e) => {
       const token = $('#tok').value.trim();
