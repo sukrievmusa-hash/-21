@@ -227,7 +227,7 @@ function stepForm() {
       <label class="field"><span>Имя</span><input class="input" name="name" autocomplete="name" required maxlength="80" value="${esc(saved.name || '')}"></label>
       <label class="field"><span>Телефон</span><input class="input" name="phone" type="tel" inputmode="tel" autocomplete="tel" required placeholder="+7 (___) ___-__-__"></label>
       <label class="field"><span>Комментарий <span class="muted">(необязательно)</span></span><textarea class="textarea" name="comment" maxlength="500" rows="2"></textarea></label>
-      <label class="check small"><input type="checkbox" name="agree" checked> <span>Согласен(на) на обработку персональных данных согласно <a href="terms.html#privacy" target="_blank">политике конфиденциальности</a></span></label>
+      <label class="check small"><input type="checkbox" name="agree" checked> <span>Согласен(на) на обработку персональных данных согласно <a href="terms.html#privacy" target="_blank" rel="noopener">политике конфиденциальности</a></span></label>
       ${priceRows()}
       <button class="btn btn-pri btn-lg btn-block" type="submit">Записаться</button>
       <button class="btn btn-ghost btn-block" type="button" id="back">← Изменить время</button>
