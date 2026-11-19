@@ -141,7 +141,9 @@ async function stepTime() {
   const tz = S.biz.timezone;
   const today = todayInTz(tz);
   const days = Math.min(S.biz.max_days_ahead + 1, 45);
-  app.innerHTML = `${bar(3)}${summary()}<h2>Дата и время</h2>
+  const live = S.biz.no_same_day
+    ? `<div class="alert alert-info" style="margin-bottom:12px">🚶 Сегодня — только живая очередь: приходите без записи. Онлайн можно записаться с завтрашнего дня.</div>` : '';
+  app.innerHTML = `${bar(3)}${summary()}<h2>Дата и время</h2>${live}
     <div class="days" id="days"></div><div id="slots"><div class="spinner"></div></div>
     <div class="row" style="margin-top:14px"><button class="btn btn-ghost" id="back">← Назад</button></div>`;
   $('#back').onclick = () => (eligibleStaff().length > 1 ? stepStaff() : stepService());
