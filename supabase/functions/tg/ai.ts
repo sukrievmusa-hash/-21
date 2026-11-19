@@ -10,7 +10,7 @@ type Ctx = {
   site_url: string | null;
   business: {
     name: string; slug: string; category: string | null; phone: string | null; address: string | null;
-    description: string | null; timezone: string; now_local: string; weekday: number; max_days_ahead: number; hours: string;
+    description: string | null; timezone: string; now_local: string; weekday: number; max_days_ahead: number; no_same_day?: boolean; hours: string;
   };
   ai: { bot_name: string; knowledge: string; instructions: string; can_book: boolean };
   services: { id: string; name: string; minutes: number; price: number | null; description: string | null }[];
@@ -61,7 +61,7 @@ ${c.ai.can_book
 9. Никогда не проси данные карт и пароли. Оплата услуг — на месте, если в базе знаний не сказано иное.
 
 # Сейчас
-${b.now_local} (${WD[b.weekday]}), часовой пояс ${b.timezone}. Запись открыта на ${b.max_days_ahead} дней вперёд.
+${b.now_local} (${WD[b.weekday]}), часовой пояс ${b.timezone}. Запись открыта на ${b.max_days_ahead} дней вперёд.${b.no_same_day ? " Сегодня онлайн-записи нет — только живая очередь (клиент может просто прийти). Записать можно с завтрашнего дня." : ""}
 ${c.client ? `Клиент уже записывался раньше: ${c.client.name}, ${c.client.phone}. Если он хочет записаться снова — можно использовать эти данные, уточнив их.` : ""}
 ${c.upcoming.length ? `Предстоящие записи клиента:\n${c.upcoming.map((u) => `- ${u.when}, ${u.service}${u.staff ? `, мастер ${u.staff}` : ""}`).join("\n")}` : ""}
 ${test ? "\n(Это тестовый диалог владельца в кабинете: записи и передача администратору выполняются понарошку.)" : ""}`;

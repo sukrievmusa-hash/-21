@@ -844,6 +844,8 @@ function renderSettings() {
         <div class="full"><button class="btn btn-pri" type="submit">Сохранить</button></div>
       </form></div>
 
+    <div class="card"><h3>🚶 Сегодня — только живая очередь</h3><div id="nosameday"></div></div>
+
     <div class="card"><h3>💳 Запись по предоплате</h3><div id="prepay"></div></div>
 
     <div class="card"><h3>📸 Фото работ и товаров</h3><div id="photos"></div></div>
@@ -872,6 +874,7 @@ function renderSettings() {
   };
   timeOffEditor($('#off'), null);
   renderTg();
+  renderNoSameDay();
   renderPrepay();
   renderPhotos();
 
@@ -894,6 +897,31 @@ function renderSettings() {
       await reloadBiz(); $('#bizName').textContent = S.biz.name; toast('Сохранено'); renderSettings();
     });
   };
+
+  function renderNoSameDay() {
+    const box = $('#nosameday'), on = !!S.biz.no_same_day;
+    box.innerHTML = `
+      <label class="switch-row">
+        <span class="grow"><b>Не принимать онлайн-запись на сегодня</b><br>
+          <span class="muted small">Сегодня клиенты приходят по живой очереди, а онлайн записываются с завтрашнего дня и дальше. Вы сами по-прежнему можете добавить запись на сегодня в кабинете. Включается и выключается в любой момент.</span></span>
+        <span class="sw-state ${on ? 'on' : 'off'}">${on ? 'ВКЛ' : 'ВЫКЛ'}</span>
+        <span class="switch"><input type="checkbox" id="nsdOn" aria-label="Сегодня только живая очередь" ${on ? 'checked' : ''}><i></i></span>
+      </label>
+      <div class="alert ${on ? 'alert-ok' : 'alert-info'}" style="margin:12px 0 0">${on
+        ? '✅ <b>Включено.</b> На сегодня онлайн-записи нет — клиенты увидят «Сегодня — живая очередь» и смогут записаться на завтра и позже.'
+        : '⏸ <b>Выключено.</b> Клиенты могут записаться и на сегодня. Нажмите на переключатель, чтобы включить.'}</div>`;
+    const sw = $('#nsdOn');
+    sw.onchange = async () => {
+      const val = sw.checked;
+      sw.disabled = true;
+      const { error } = await sb.from('businesses').update({ no_same_day: val }).eq('id', S.biz.id);
+      sw.disabled = false;
+      if (error) { sw.checked = !val; return toastErr(error); }
+      await reloadBiz();
+      toast(val ? 'Сегодня — только живая очередь' : 'Запись на сегодня снова открыта');
+      renderNoSameDay();
+    };
+  }
 
   function renderPrepay() {
     const box = $('#prepay'), on = !!S.biz.prepay_enabled;
