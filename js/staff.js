@@ -1,13 +1,13 @@
 // Кабинет сотрудника: только его записи, подключение своего Telegram, смена пароля
 import {
   sb, $, $$, esc, money, toast, toastErr, modal, busy, fmtPhone, telLink, waLink, zonedToUtc, dateStrInTz,
-  timeStrInTz, todayInTz, addDays, isoWeekday, WD_SHORT, MONTHS_SHORT, humanDate, plural, statusBadge, pageUrl, BRAND,
+  timeStrInTz, todayInTz, addDays, confirmDlg, isoWeekday, WD_SHORT, MONTHS_SHORT, humanDate, plural, statusBadge, pageUrl, BRAND,
 } from './lib.js';
 
 const STAFF_DOMAIN = 'staff.jazylam.kz';
 const DAYS_BACK = 1, DAYS_AHEAD = 21;
 const root = $('#root');
-const S = { me: null, items: [], day: null, timer: null, earn: [] };
+const S = { me: null, items: [], day: null, timer: null, earn: [], tab: 'sched' };
 const METHODS = [['cash', '💵 Наличные'], ['kaspi', '📱 Kaspi'], ['card', '💳 Карта']];
 const methodName = (m) => (METHODS.find((x) => x[0] === m) || ['', m])[1];
 const tz = () => S.me.business.timezone;
@@ -69,54 +69,94 @@ function showLogin() {
 
 function renderShell() {
   const me = S.me, b = me.business;
-  root.innerHTML = `
+  document.body.classList.add('sx-body');
+  root.innerHTML = `<div class="sx">
     <header class="topbar"><div class="container">
-      <span class="logo"><i>J</i><span>${esc(BRAND)}</span></span>
-      <span class="biz grow">${esc(b.name)}</span>
-      <button class="btn btn-sm btn-ghost" id="pwd">Пароль</button>
-      <button class="btn btn-sm btn-ghost" id="logout">Выйти</button>
+      <div class="sx-who"><b>${esc(me.name)}</b><span>${esc([me.title, b.name].filter(Boolean).join(' · '))}</span></div>
+      <button class="sx-ico" id="tgBtn" aria-label="Telegram">✈️<i class="dot"></i></button>
+      <button class="sx-ico" id="menuBtn" aria-label="Меню">⋯</button>
     </div></header>
-    <div class="container"><main class="page">
-      <div class="page-h"><h2>👋 ${esc(me.name)}</h2><span class="muted small">${esc(me.title || '')}</span></div>
-      ${b.active ? '' : '<div class="alert alert-warn" style="margin-bottom:12px">Онлайн-запись сейчас приостановлена — новые клиенты не записываются. Сообщите администратору.</div>'}
-      <div id="earn" style="margin-bottom:14px"></div>
-      <div id="tg" style="margin-bottom:14px"></div>
-      <div id="sum" class="muted small" style="margin-bottom:6px"></div>
-      <div class="days" id="days"></div>
-      <h3 id="dayTitle" style="margin:12px 0 8px"></h3>
-      <div id="list"><div class="spinner"></div></div>
-    </main></div>`;
-  $('#logout').onclick = () => sb.auth.signOut();
-  $('#pwd').onclick = passwordModal;
+    <div class="container"><main>
+      <div class="sx-tabs"><div class="seg" role="tablist">
+        <button data-tab="sched" role="tab">🗓 Расписание</button><button data-tab="earn" role="tab">💰 Заработок</button></div></div>
+      ${b.active ? '' : '<div class="alert alert-warn" style="margin-bottom:12px">Онлайн-запись приостановлена — новые клиенты не записываются. Сообщите администратору.</div>'}
+      <section id="tabSched">
+        <button class="sx-strip" id="strip"><span class="l">Сегодня заработано</span><span class="v" id="stripV">…</span><span class="go">›</span></button>
+        <div class="days" id="days"></div>
+        <div class="sx-dayh"><h3 id="dayTitle"></h3><span id="sum"></span></div>
+        <div class="sx-back hide" id="backToday"><button class="btn btn-sm">← К сегодняшнему дню</button></div>
+        <div id="list"><div class="spinner"></div></div>
+      </section>
+      <section id="tabEarn" class="hide"><div id="earn"><div class="spinner"></div></div></section>
+    </main></div>
+    <button class="btn btn-pri sx-fab" id="walkin">＋ Без записи</button></div>`;
+  $$('[data-tab]').forEach((t) => { t.onclick = () => setTab(t.dataset.tab); });
+  $('#strip').onclick = () => setTab('earn');
+  $('#walkin').onclick = () => payModal(null);
+  $('#menuBtn').onclick = menuModal;
+  $('#tgBtn').onclick = tgModal;
+  $('#backToday button').onclick = () => { S.day = todayInTz(tz()); drawDays(); drawList(); };
+  setTab(S.tab || 'sched');
   renderTg();
 }
 
-function renderTg() {
-  const me = S.me, box = $('#tg');
-  if (!box) return;
-  if (me.tg) {
-    box.innerHTML = `<div class="alert alert-ok row" style="gap:8px;flex-wrap:wrap;align-items:center">
-      <span class="grow">✈️ Telegram подключён — сюда приходят только ваши записи, а в 8:00 — список клиентов на день.</span>
-      <button class="btn btn-sm btn-ghost" id="tgOff">Отключить</button></div>`;
-    $('#tgOff').onclick = async (e) => busy(e.target, async () => {
-      const { error } = await sb.rpc('staff_unlink_tg');
-      if (error) return toastErr(error);
-      await refreshMe(); toast('Telegram отключён');
-    });
-  } else if (me.bot_username) {
-    box.innerHTML = `<div class="card" style="padding:12px">
-      <b>📩 Свои записи — в Telegram</b>
-      <p class="muted small" style="margin:2px 0 8px">Кто записался, отмены, переносы и список на день в 8:00.</p>
-      <div class="row" style="gap:8px;flex-wrap:wrap">
-        <a class="btn btn-tg" target="_blank" rel="noopener" href="https://t.me/${esc(me.bot_username)}?start=m_${esc(me.tg_link_code)}">Подключить Telegram</a>
-        <button class="btn btn-ghost" id="tgCheck">Я нажал «Запустить» — проверить</button></div></div>`;
-    $('#tgCheck').onclick = async (e) => busy(e.target, async () => {
-      await refreshMe();
-      toast(S.me.tg ? 'Готово, Telegram подключён' : 'Пока не подключено: откройте бота и нажмите «Запустить» (Start)', S.me.tg ? 'ok' : 'err');
-    });
-  } else box.innerHTML = '';
+function setTab(t) {
+  S.tab = t;
+  $$('[data-tab]').forEach((b) => { b.classList.toggle('on', b.dataset.tab === t); b.setAttribute('aria-selected', b.dataset.tab === t); });
+  $('#tabSched').classList.toggle('hide', t !== 'sched');
+  $('#tabEarn').classList.toggle('hide', t !== 'earn');
+  window.scrollTo({ top: 0 });
 }
 
+// Статус Telegram — точка на значке в шапке
+function renderTg() {
+  const dot = $('#tgBtn .dot');
+  if (!dot) return;
+  const has = S.me.tg;
+  $('#tgBtn').classList.toggle('hide', !has && !S.me.bot_username);
+  dot.className = 'dot ' + (has ? 'on' : 'off');
+  $('#tgBtn').title = has ? 'Telegram подключён' : 'Telegram не подключён';
+}
+
+function tgModal() {
+  const me = S.me;
+  const m = modal({
+    title: 'Уведомления в Telegram',
+    body: me.tg
+      ? `<p style="margin-top:0">✅ <b>Подключено.</b> Сюда приходят только ваши записи: новые, отмены, переносы, а в 8:00 — список клиентов на день.</p>`
+      : `<p style="margin-top:0">Получайте в Telegram только своих клиентов: кто записался, отмены, переносы и список на день в 8:00.</p>
+         <a class="btn btn-tg btn-block btn-lg" target="_blank" rel="noopener" href="https://t.me/${esc(me.bot_username)}?start=m_${esc(me.tg_link_code)}">Подключить Telegram</a>
+         <p class="muted small">В боте нажмите «Запустить» (Start), затем вернитесь сюда.</p>`,
+    footer: me.tg
+      ? '<button class="btn" data-a="close">Закрыть</button><button class="btn btn-danger" data-a="off">Отключить</button>'
+      : '<button class="btn" data-a="close">Закрыть</button><button class="btn btn-pri" data-a="check">Я нажал «Запустить»</button>',
+  });
+  $('[data-a=close]', m.el).onclick = m.close;
+  const off = $('[data-a=off]', m.el), chk = $('[data-a=check]', m.el);
+  if (off) off.onclick = (e) => busy(e.target, async () => {
+    const { error } = await sb.rpc('staff_unlink_tg');
+    if (error) return toastErr(error);
+    await refreshMe(); m.close(); toast('Telegram отключён');
+  });
+  if (chk) chk.onclick = (e) => busy(e.target, async () => {
+    await refreshMe();
+    if (S.me.tg) { m.close(); toast('Готово, Telegram подключён'); }
+    else toastErr('Пока не подключено: откройте бота и нажмите «Запустить» (Start)');
+  });
+}
+
+function menuModal() {
+  const m = modal({
+    title: S.me.name,
+    body: `<div class="sx-menu">
+      <button class="btn" data-m="tg">✈️ Telegram — ${S.me.tg ? 'подключён' : 'не подключён'}</button>
+      <button class="btn" data-m="pwd">🔑 Сменить пароль</button>
+      <button class="btn btn-danger" data-m="out">↩️ Выйти</button></div>`,
+  });
+  $('[data-m=tg]', m.el).onclick = () => { m.close(); tgModal(); };
+  $('[data-m=pwd]', m.el).onclick = () => { m.close(); passwordModal(); };
+  $('[data-m=out]', m.el).onclick = () => { m.close(); sb.auth.signOut(); };
+}
 async function refreshMe() {
   const { data } = await sb.rpc('staff_me');
   if (!data) return boot();
@@ -133,7 +173,7 @@ async function load() {
   });
   if (error) { toastErr(error); return; }
   S.items = data || [];
-  drawDays(from);
+  drawDays();
   drawList();
   loadEarn();
 }
@@ -155,21 +195,38 @@ async function loadEarn() {
 }
 
 function drawEarn() {
+  const today = todayInTz(tz()), w = weekStart(today), m = monthStart(today);
+  const pick = (fromDay) => S.earn.filter((e) => dateStrInTz(e.occurred_at, tz()) >= fromDay);
+  const sum = (a) => a.reduce((s, e) => s + e.amount, 0);
+  const t = pick(today), wk = pick(w), mo = pick(m);
+  const sv = $('#stripV');
+  if (sv) sv.textContent = `${money(sum(t)) || '0 ₸'} · ${t.length} кл.`;
   const box = $('#earn');
   if (!box) return;
-  const today = todayInTz(tz()), w = weekStart(today), m = monthStart(today);
-  const sum = (fromDay) => S.earn.filter((e) => dateStrInTz(e.occurred_at, tz()) >= fromDay).reduce((a, e) => a + e.amount, 0);
-  const cnt = (fromDay) => S.earn.filter((e) => dateStrInTz(e.occurred_at, tz()) >= fromDay).length;
-  const cell = (label, v, n) => `<div class="card" style="padding:10px 6px;text-align:center"><div class="muted small">${label}</div>
-    <div style="font-size:17px;font-weight:800;letter-spacing:-.02em;white-space:nowrap">${money(v) || '0 ₸'}</div><div class="muted small">${n} ${plural(n, 'клиент', 'клиента', 'клиентов')}</div></div>`;
-  box.innerHTML = `<div class="page-h" style="margin-bottom:8px;flex-wrap:wrap;gap:8px"><h3 style="margin:0">💰 Мой заработок</h3>
-      <span class="row" style="gap:6px"><button class="btn btn-sm btn-pri" id="walkin">+ Без записи</button><button class="btn btn-sm btn-ghost" id="hist">История</button></span></div>
-    <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px">${cell('Сегодня', sum(today), cnt(today))}${cell('Неделя', sum(w), cnt(w))}${cell('Месяц', sum(m), cnt(m))}</div>`;
-  $('#walkin').onclick = () => payModal(null);
-  $('#hist').onclick = historyModal;
+  const cell = (label, a, main) => `<div class="${main ? 'main' : ''}"><div class="l">${label}</div><div class="v">${money(sum(a)) || '0 ₸'}</div>
+    <div class="n">${a.length} ${plural(a.length, 'клиент', 'клиента', 'клиентов')}</div></div>`;
+  // История: эта неделя и месяц (что уже загружено), сгруппировано по дням
+  const rows = [...S.earn].sort((a, b) => new Date(b.occurred_at) - new Date(a.occurred_at));
+  let last = '', hist = '';
+  for (const e of rows) {
+    const d = dateStrInTz(e.occurred_at, tz());
+    if (d !== last) {
+      const dayRows = rows.filter((x) => dateStrInTz(x.occurred_at, tz()) === d);
+      hist += `<div class="sx-dsep">${d === today ? 'Сегодня' : d === addDays(today, -1) ? 'Вчера' : esc(humanDate(d, false))} · ${money(sum(dayRows))}</div>`;
+      last = d;
+    }
+    hist += `<div class="sx-pay" data-id="${e.id}" style="margin-bottom:6px">
+      <div class="d"><b>${timeStrInTz(e.occurred_at, tz())}</b>${esc(methodName(e.method).split(' ')[1] || '')}</div>
+      <div class="m"><b>${esc(e.client_name || 'Клиент без имени')}</b><div>${esc([e.service_name, e.note].filter(Boolean).join(' · ') || ' ')}</div></div>
+      <div class="a">${money(e.amount)}</div>
+      ${e.editable ? '<button class="sx-ico" data-e aria-label="Исправить">✏️</button>' : ''}</div>`;
+  }
+  box.innerHTML = `<div class="sx-kpi">${cell('Сегодня', t, true)}${cell('Неделя', wk)}${cell('Месяц', mo)}</div>
+    <div class="sx-dayh"><h3>Мои оплаты</h3><span>с ${esc(humanDate([w, m].sort()[0], false))}</span></div>
+    ${rows.length ? hist + '<p class="muted small" style="margin:12px 2px">Исправить или удалить оплату можно 24 часа, потом — только администратор.</p>'
+      : '<div class="card empty"><div class="ico">💰</div>Пока оплат нет.<br><span class="muted small">После клиента нажмите «Оплатил» в расписании.</span></div>'}`;
+  $$('[data-e]', box).forEach((btn) => { btn.onclick = () => editEarning(S.earn.find((x) => x.id === btn.closest('[data-id]').dataset.id)); });
 }
-
-// Окно «Оплатил»: сумма, способ, комментарий. b — запись; без неё — клиент без записи.
 function payModal(b) {
   const edit = b && b.earning_id;
   const e0 = edit ? S.earn.find((x) => x.id === b.earning_id) : null;
@@ -212,34 +269,6 @@ function payModal(b) {
 }
 
 // История оплат за 30 дней: можно исправить или удалить свою запись в течение суток
-async function historyModal() {
-  const today = todayInTz(tz());
-  const m = modal({ title: 'Мои оплаты за 30 дней', body: '<div class="spinner"></div>' });
-  const { data, error } = await sb.rpc('staff_earnings', {
-    p_from: zonedToUtc(addDays(today, -30), '00:00', tz()).toISOString(),
-    p_to: zonedToUtc(addDays(today, 1), '00:00', tz()).toISOString(),
-  });
-  if (error) { m.close(); return toastErr(error); }
-  const rows = data || [];
-  const total = rows.reduce((a, e) => a + e.amount, 0);
-  m.body.innerHTML = rows.length ? `<p class="muted small" style="margin-top:0">Всего: <b>${money(total)}</b> · ${rows.length} ${plural(rows.length, 'оплата', 'оплаты', 'оплат')}. Исправить или удалить можно в течение 24 часов, потом — только администратор.</p>
-    <div class="day-list">${rows.map((e) => `<div class="item" data-id="${e.id}">
-      <div class="t" style="min-width:74px">${esc(humanDate(dateStrInTz(e.occurred_at, tz()), false))}<div class="muted small" style="font-weight:400">${timeStrInTz(e.occurred_at, tz())}</div></div>
-      <div class="grow"><b>${money(e.amount)}</b> <span class="muted small">${esc(methodName(e.method))}</span>
-        <div class="muted small">${[e.client_name, e.service_name, e.note].filter(Boolean).map(esc).join(' · ') || 'без имени'}</div></div>
-      ${e.editable ? '<button class="btn btn-sm btn-ghost" data-e title="Исправить">✏️</button><button class="btn btn-sm btn-ghost" data-d title="Удалить">🗑</button>' : ''}</div>`).join('')}</div>` : '<div class="empty">Пока оплат нет</div>';
-  $$('.item', m.body).forEach((row) => {
-    const id = row.dataset.id, e = rows.find((x) => x.id === id);
-    const ed = $('[data-e]', row), de = $('[data-d]', row);
-    if (ed) ed.onclick = () => { m.close(); editEarning(e); };
-    if (de) de.onclick = async () => {
-      if (!window.confirm(`Удалить оплату ${money(e.amount)}?`)) return;
-      const { error: er } = await sb.rpc('staff_delete_earning', { p_id: id });
-      if (er) return toastErr(er);
-      toast('Удалено'); m.close(); await load();
-    };
-  });
-}
 
 function editEarning(e) {
   const m = modal({
@@ -248,8 +277,14 @@ function editEarning(e) {
       <label class="field"><span>Сумма, ₸</span><input class="input" name="amount" type="number" inputmode="numeric" min="1" value="${e.amount}" style="font-size:24px;font-weight:800"></label>
       <div class="seg seg3" id="meth">${METHODS.map(([k, t]) => `<button type="button" data-k="${k}" class="${k === e.method ? 'on' : ''}">${t}</button>`).join('')}</div>
       <label class="field"><span>Комментарий</span><input class="input" name="note" maxlength="300" value="${esc(e.note || '')}"></label></form>`,
-    footer: '<button class="btn" data-a="close">Отмена</button><button class="btn btn-pri" data-a="save">Сохранить</button>',
+    footer: '<button class="btn" data-a="close">Отмена</button><button class="btn btn-ghost" data-a="del" aria-label="Удалить">🗑</button><button class="btn btn-pri" data-a="save">Сохранить</button>',
   });
+  $('[data-a=del]', m.el).onclick = async () => {
+    if (!(await confirmDlg(`Удалить оплату ${money(e.amount)}?`, 'Удалить', true))) return;
+    const { error } = await sb.rpc('staff_delete_earning', { p_id: e.id });
+    if (error) return toastErr(error);
+    toast('Удалено'); m.close(); await load();
+  };
   let method = e.method;
   $$('#meth button', m.el).forEach((btn) => { btn.onclick = () => { method = btn.dataset.k; $$('#meth button', m.el).forEach((x) => x.classList.toggle('on', x === btn)); }; });
   $('[data-a=close]', m.el).onclick = m.close;
@@ -264,24 +299,21 @@ function editEarning(e) {
 const active = (b) => b.status !== 'cancelled';
 const itemsOn = (d) => S.items.filter((b) => dateStrInTz(b.starts_at, tz()) === d);
 
-function drawDays(from) {
+function drawDays() {
   const box = $('#days');
   if (!box) return;
-  const today = todayInTz(tz());
-  const upcoming = S.items.filter((b) => active(b) && b.status !== 'done' && b.status !== 'no_show' && new Date(b.starts_at) > new Date());
-  $('#sum').textContent = upcoming.length
-    ? `Впереди ${upcoming.length} ${plural(upcoming.length, 'запись', 'записи', 'записей')}`
-    : 'Впереди записей пока нет';
+  const today = todayInTz(tz()), from = addDays(today, -DAYS_BACK);
   box.innerHTML = '';
   for (let i = 0; i <= DAYS_BACK + DAYS_AHEAD; i++) {
     const d = addDays(from, i);
     const [, m, dd] = d.split('-').map(Number);
     const n = itemsOn(d).filter(active).length;
     const btn = document.createElement('button');
-    btn.className = 'day' + (d === S.day ? ' sel' : '');
+    btn.className = 'day' + (d === S.day ? ' sel' : '') + (d === today ? ' today' : '');
     btn.innerHTML = `<div class="dw">${d === today ? 'сег' : d === addDays(today, 1) ? 'завт' : d === addDays(today, -1) ? 'вчера' : WD_SHORT[isoWeekday(d)]}</div>
-      <div class="dn">${dd}</div><div class="dm">${n ? `<b>${n}</b> кл.` : MONTHS_SHORT[m - 1]}</div>`;
-    btn.onclick = () => { S.day = d; drawDays(from); drawList(); };
+      <div class="dn">${dd}</div><div class="dm">${n ? `<span class="cnt">${n}</span>` : MONTHS_SHORT[m - 1]}</div>`;
+    btn.setAttribute('aria-label', `${humanDate(d)}${n ? `, ${n} ${plural(n, 'запись', 'записи', 'записей')}` : ''}`);
+    btn.onclick = () => { S.day = d; drawDays(); drawList(); };
     box.append(btn);
     if (d === S.day) requestAnimationFrame(() => btn.scrollIntoView({ inline: 'center', block: 'nearest' }));
   }
@@ -294,24 +326,27 @@ function drawList() {
   const items = itemsOn(d);
   const act = items.filter(active);
   const sum = act.reduce((s, b) => s + (b.price || 0), 0);
-  $('#dayTitle').textContent = `${d === today ? 'Сегодня, ' : d === addDays(today, 1) ? 'Завтра, ' : ''}${humanDate(d)}`
-    + (act.length ? ` · ${act.length} ${plural(act.length, 'клиент', 'клиента', 'клиентов')}${sum ? ' · ' + money(sum) : ''}` : '');
-  if (!items.length) { box.innerHTML = '<div class="card empty"><div class="ico">🗓</div>На этот день у вас записей нет</div>'; return; }
-  box.innerHTML = `<div class="card day-list">${items.map((b) => `
-    <div class="item ${b.status === 'cancelled' ? 'cancelled' : ''}" style="flex-wrap:wrap">
-      <div class="t">${timeStrInTz(b.starts_at, tz())}<div class="muted small" style="font-weight:400">до ${timeStrInTz(b.ends_at, tz())}</div></div>
-      <div class="grow"><div class="who" style="justify-content:flex-start"><b>${esc(b.client_name)}</b> <span class="muted small">${fmtPhone(b.client_phone)}</span></div>
-        <div class="muted small">${[b.service_name, b.price != null ? money(b.price) : '', b.source === 'online' ? 'онлайн' : ''].filter(Boolean).map(esc).join(' · ')}</div>
-        ${b.comment ? `<div class="small">💬 ${esc(b.comment)}</div>` : ''}</div>
-      ${b.paid != null ? `<span class="badge b-confirmed" title="${esc(methodName(b.paid_method))}">✅ ${money(b.paid)}</span>` : statusBadge(b.status)}
-      ${active(b) ? `<div class="row" style="flex-basis:100%;gap:8px">
-        <a class="btn btn-sm btn-ghost" href="${telLink(b.client_phone)}" title="Позвонить">📞</a>
-        <a class="btn btn-sm btn-ghost" target="_blank" rel="noopener" href="${esc(waLink(b.client_phone))}" title="Написать в WhatsApp">💬</a>
-        <button class="btn btn-sm ${b.paid != null ? '' : 'btn-pri'} grow" data-pay="${b.id}">${b.paid != null ? '✏️ Изменить оплату' : '💰 Оплатил'}</button></div>` : ''}
-    </div>`).join('')}</div>`;
+  $('#dayTitle').textContent = `${d === today ? 'Сегодня' : d === addDays(today, 1) ? 'Завтра' : d === addDays(today, -1) ? 'Вчера' : humanDate(d)}`;
+  $('#sum').textContent = act.length ? `${act.length} ${plural(act.length, 'клиент', 'клиента', 'клиентов')}${sum ? ' · ' + money(sum) : ''}` : '';
+  $('#backToday').classList.toggle('hide', d === today);
+  if (!items.length) { box.innerHTML = '<div class="card empty"><div class="ico">🗓</div>На этот день записей нет</div>'; return; }
+  box.innerHTML = `<div class="sx-list">${items.map((b) => {
+    const paid = b.paid != null;
+    const badge = paid ? `<span class="badge b-done">✅ Оплачено</span>` : statusBadge(b.status);
+    return `<div class="sx-card ${b.status === 'cancelled' ? 'cancelled' : ''} ${paid ? 'paid' : ''}">
+      <div class="sx-l1"><div class="sx-time">${timeStrInTz(b.starts_at, tz())}<small>– ${timeStrInTz(b.ends_at, tz())}</small></div>${badge}</div>
+      <div class="sx-l2"><div class="sx-name">${esc(b.client_name)}</div>
+        <div class="sx-sub"><span>${esc(b.service_name || 'Услуга не указана')}${b.source === 'online' ? ' · онлайн' : ''}</span>
+          <b>${paid ? money(b.paid) + ' · ' + esc(methodName(b.paid_method).split(' ')[1] || '') : b.price != null ? money(b.price) : ''}</b></div>
+        ${b.comment ? `<div class="sx-note">💬 ${esc(b.comment)}</div>` : ''}</div>
+      ${active(b) ? `<div class="sx-l3">
+        <a class="sx-ico" href="${telLink(b.client_phone)}" aria-label="Позвонить ${esc(fmtPhone(b.client_phone))}">📞</a>
+        <a class="sx-ico" target="_blank" rel="noopener" href="${esc(waLink(b.client_phone))}" aria-label="WhatsApp">💬</a>
+        <button class="btn ${paid ? '' : 'btn-pri'} main" data-pay="${b.id}">${paid ? '✏️ Изменить оплату' : '💰 Оплатил'}</button></div>` : ''}
+    </div>`;
+  }).join('')}</div>`;
   $$('[data-pay]', box).forEach((btn) => { btn.onclick = () => payModal(S.items.find((x) => x.id === btn.dataset.pay)); });
 }
-
 function passwordModal() {
   const m = modal({
     title: 'Сменить пароль',
