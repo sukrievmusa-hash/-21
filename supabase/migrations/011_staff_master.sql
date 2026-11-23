@@ -97,3 +97,80 @@ end $$;
 
 revoke execute on function public.staff_me(), public.staff_set_day_off(boolean) from public, anon;
 grant execute on function public.staff_me(), public.staff_set_day_off(boolean) to authenticated;
+
+-- ---------------------------------------------------------------------
+--  Исправления по проверке 2026-11-23
+-- ---------------------------------------------------------------------
+-- search_path у функции карточки (замечание Supabase Advisor)
+alter function private.staff_card(public.bookings, public.businesses) set search_path = public, extensions;
+
+-- Оплата по записи:
+--  • датой оплаты считаем время записи, если мастер отметил её позже (вчерашний клиент не попадёт в сегодня);
+--  • нельзя «принять оплату» за запись будущих дней — защита от случайного нажатия.
+create or replace function public.staff_add_earning(
+  p_amount int, p_method text default 'cash', p_booking uuid default null,
+  p_client text default null, p_service text default null, p_note text default null
+) returns jsonb
+language plpgsql security definer set search_path = public, extensions as $$
+declare s public.staff; k public.bookings; e public.earnings; b public.businesses;
+begin
+  select * into s from public.staff where user_id = auth.uid();
+  if not found then raise exception 'Нет доступа'; end if;
+  if not s.is_active then raise exception 'Вы отключены от работы — обратитесь к администратору'; end if;
+  if p_amount is null or p_amount < 1 or p_amount > 10000000 then
+    raise exception 'Укажите сумму от 1 до 10 000 000 ₸';
+  end if;
+  if p_method not in ('cash', 'kaspi', 'card') then raise exception 'Выберите способ оплаты'; end if;
+  select * into b from public.businesses where id = s.business_id;
+
+  if p_booking is not null then
+    select * into k from public.bookings where id = p_booking and staff_id = s.id for update;
+    if not found then raise exception 'Это не ваша запись'; end if;
+    if k.status = 'cancelled' then raise exception 'Запись отменена'; end if;
+    if (k.starts_at at time zone b.timezone)::date > (now() at time zone b.timezone)::date then
+      raise exception 'Оплату можно принять в день записи';
+    end if;
+    select * into e from public.earnings where booking_id = k.id;
+    if found then
+      if e.created_at < now() - interval '24 hours' then
+        raise exception 'Оплата уже записана — изменить её может только администратор';
+      end if;
+      update public.earnings set amount = p_amount, method = p_method, note = nullif(trim(coalesce(p_note, '')), '')
+        where id = e.id returning * into e;
+    else
+      insert into public.earnings (business_id, staff_id, booking_id, amount, price_expected, method,
+                                   client_name, service_name, note, occurred_at, created_by)
+      values (s.business_id, s.id, k.id, p_amount, k.price, p_method,
+              k.client_name, k.service_name, p_note, least(now(), greatest(k.ends_at, k.starts_at)), 'staff')
+      returning * into e;
+    end if;
+    if k.status in ('booked', 'confirmed', 'no_show') then
+      update public.bookings set status = 'done' where id = k.id;
+    end if;
+  else
+    insert into public.earnings (business_id, staff_id, amount, method, client_name, service_name, note, occurred_at, created_by)
+    values (s.business_id, s.id, p_amount, p_method, left(p_client, 80), left(p_service, 120), left(p_note, 300), now(), 'staff')
+    returning * into e;
+  end if;
+  return jsonb_build_object('id', e.id, 'amount', e.amount, 'method', e.method);
+end $$;
+
+-- Мастер отмечает «Клиент не пришёл» (только своя, уже начавшаяся, неоплаченная запись)
+create or replace function public.staff_mark_no_show(p_booking uuid) returns void
+language plpgsql security definer set search_path = public, extensions as $$
+declare s public.staff; k public.bookings;
+begin
+  select * into s from public.staff where user_id = auth.uid();
+  if not found then raise exception 'Нет доступа'; end if;
+  select * into k from public.bookings where id = p_booking and staff_id = s.id for update;
+  if not found then raise exception 'Это не ваша запись'; end if;
+  if k.status = 'cancelled' then raise exception 'Запись отменена'; end if;
+  if k.starts_at > now() then raise exception 'Отметить можно после начала записи'; end if;
+  if exists (select 1 from public.earnings where booking_id = k.id) then
+    raise exception 'По записи уже принята оплата';
+  end if;
+  update public.bookings set status = 'no_show' where id = k.id;
+end $$;
+
+revoke execute on function public.staff_add_earning(int, text, uuid, text, text, text), public.staff_mark_no_show(uuid) from public, anon;
+grant execute on function public.staff_add_earning(int, text, uuid, text, text, text), public.staff_mark_no_show(uuid) to authenticated;
