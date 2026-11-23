@@ -2,9 +2,9 @@
 import {
   sb, $, $$, esc, money, toast, toastErr, modal, busy, fmtPhone, telLink, waLink, zonedToUtc, dateStrInTz,
   timeStrInTz, todayInTz, addDays, confirmDlg, isoWeekday, WD_SHORT, MONTHS_SHORT, humanDate, plural, pageUrl, BRAND, copyText, STAFF_AUTH_KEY, MIGRATED_FROM,
-} from './lib.js';
-import { ico } from './icons.js';
-import { downloadXlsx } from './xlsx.js';
+} from './lib.js?v=20261123c';
+import { ico } from './icons.js?v=20261123c';
+import { downloadXlsx } from './xlsx.js?v=20261123c';
 
 const STAFF_DOMAIN = 'staff.jazylam.kz';
 const DAYS_BACK = 1, DAYS_AHEAD = 21;
@@ -77,9 +77,10 @@ function showLogin(msg) {
     <div class="card"><form id="lf" class="stack" novalidate>
       <div><h2 style="margin-bottom:4px">Кабинет сотрудника</h2>
         <p class="muted small" style="margin:0">Логин и пароль выдаёт администратор</p></div>
-      <label class="field"><span>Логин</span><input class="input" name="login" autocomplete="username" autocapitalize="off" required></label>
+      <label class="field"><span>Логин</span><input class="input" name="login" autocomplete="username" autocapitalize="off" autocorrect="off" spellcheck="false" required></label>
       <label class="field"><span>Пароль</span><input class="input" name="password" type="password" autocomplete="current-password" required></label>
       <button class="btn btn-pri btn-block btn-lg">Войти</button>
+      <p class="muted small center" style="margin:0">Забыли пароль? Попросите администратора нажать «Новый пароль».</p>
       <a class="btn btn-ghost btn-block" href="app.html">Я владелец бизнеса</a>
     </form></div></div></div>`;
   const f = $('#lf');
@@ -146,6 +147,7 @@ function renderShell() {
   $('#walkin').onclick = () => payModal(null);
   $('#menuBtn').onclick = menuModal;
   $('#shiftBtn').onclick = shiftModal;
+  if (me.hours_today === undefined) $('#shiftBtn').classList.add('hide');
   setTab(S.tab || 'sched');
   renderTg();
 }
@@ -298,6 +300,7 @@ async function loadEarn() {
   if (error) return;
   S.earn = data || [];
   drawEarn();
+  drawList();   // кнопки «Изменить оплату» зависят от загруженных оплат
 }
 
 
@@ -369,9 +372,16 @@ function payModal(b) {
       ${b ? '' : '<div><label class="sx-lbl">Имя клиента <em>(необязательно)</em></label><input class="sx-in" name="client" maxlength="80" placeholder="Например: Алихан"></div>'}
       <div><label class="sx-lbl">Комментарий <em>(необязательно)</em></label><input class="sx-in" name="note" maxlength="300" value="${esc(e0?.note || '')}"></div>
     </form>`,
-    footer: `<button class="btn btn-pri sx-save" data-a="save">${edit ? 'Сохранить' : 'Сохранить оплату'}</button>`,
+    footer: `${b && !edit && new Date(b.starts_at) <= new Date() && b.status !== 'no_show' ? '<button class="btn sx-noshow" data-a="noshow">Не пришёл</button>' : ''}<button class="btn btn-pri sx-save" data-a="save">${edit ? 'Сохранить' : 'Сохранить оплату'}</button>`,
   });
   const f = $('#pf', m.el);
+  const ns = $('[data-a=noshow]', m.el);
+  if (ns) ns.onclick = async () => {
+    if (!(await confirmDlg(`Отметить, что ${b.client_name} не пришёл?`, 'Не пришёл'))) return;
+    const { error } = await sb.rpc('staff_mark_no_show', { p_booking: b.id });
+    if (error) return toastErr(error);
+    toast('Отмечено: клиент не пришёл'); m.close(); await load();
+  };
   bindMethods(m.el, (k) => { method = k; });
   $$('[data-svc]', m.el).forEach((btn) => {
     btn.onclick = () => {
@@ -447,7 +457,14 @@ function drawDays() {
     btn.setAttribute('aria-label', `${humanDate(d)}${n ? `, ${n} ${plural(n, 'запись', 'записи', 'записей')}` : ''}`);
     btn.onclick = () => { S.day = d; drawDays(); drawList(); };
     box.append(btn);
-    if (d === S.day) requestAnimationFrame(() => btn.scrollIntoView({ inline: 'center', block: 'nearest' }));
+  }
+  // центрируем выбранный день внутри ленты (страницу не трогаем) — только если день сменился
+  if (S.daysCentered !== S.day) {
+    S.daysCentered = S.day;
+    requestAnimationFrame(() => {
+      const sel = $('.day.sel', box);
+      if (sel) box.scrollLeft = sel.offsetLeft - box.offsetLeft - (box.clientWidth - sel.offsetWidth) / 2;
+    });
   }
 }
 
@@ -484,7 +501,9 @@ function drawList() {
     const [st, stl] = bookingState(b, now);
     const dur = Math.round((new Date(b.ends_at) - new Date(b.starts_at)) / 60000);
     const isF = focus && focus.id === b.id;
-    const canPay = active(b) && b.status !== 'no_show';
+    const canPay = active(b) && d <= today;
+    const e0 = b.earning_id ? S.earn.find((x) => x.id === b.earning_id) : null;
+    const canEdit = b.paid != null && e0 && e0.editable;
     const price = b.paid != null ? `${money(b.paid)} · ${MSHORT[b.paid_method] || ''}` : b.price != null ? money(b.price) : '';
     return `<div class="sx-bk ${isF ? 'focus' : ''} ${st === 'cancel' ? 'cancelled' : ''}">
       <div class="sx-bkr">
@@ -494,9 +513,10 @@ function drawList() {
           ${b.comment ? `<p class="cm">💬 ${esc(b.comment)}</p>` : ''}</div>
       </div>
       ${active(b) ? `<div class="sx-row">
-        ${canPay ? (b.paid != null
-          ? `<button class="sx-act ghost" data-pay="${b.id}">${ico('pencil')}<span>Изменить оплату</span></button>`
-          : `<button class="sx-act ${isF || st === 'due' ? '' : 'soft'}" data-pay="${b.id}">${ico('checkc')}<span>Принять оплату${b.price != null ? ' • ' + money(b.price) : ''}</span></button>`) : '<span class="grow"></span>'}
+        ${b.paid != null
+          ? (canEdit ? `<button class="sx-act ghost" data-pay="${b.id}">${ico('pencil')}<span>Изменить оплату</span></button>` : '<span class="sx-act done">✅ Оплата записана</span>')
+          : canPay ? `<button class="sx-act ${isF || st === 'due' ? '' : 'soft'}" data-pay="${b.id}">${ico('checkc')}<span>${b.price != null ? 'Принять ' + money(b.price) : 'Принять оплату'}</span></button>`
+          : '<span class="grow"></span>'}
         <a class="sx-cbtn" href="${telLink(b.client_phone)}" aria-label="Позвонить ${esc(fmtPhone(b.client_phone))}">${ico('phone')}</a>
         <a class="sx-cbtn" target="_blank" rel="noopener" href="${esc(waLink(b.client_phone))}" aria-label="Написать в WhatsApp">${ico('msg')}</a></div>` : ''}
     </div>`;
