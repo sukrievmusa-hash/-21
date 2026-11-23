@@ -2,7 +2,7 @@ import {
   sb, $, $$, esc, money, toast, toastErr, errMsg, modal, confirmDlg, busy, copyText, qrDataUrl, store,
   normPhone, fmtPhone, phoneMask, waLink, telLink, zonedToUtc, dateStrInTz, timeStrInTz, minutesInTz,
   todayInTz, addDays, isoWeekday, WD_SHORT, WD_FULL, humanDate, humanDateTime, fmtDateShort, minsToHHMM,
-  durText, plural, statusBadge, STATUS, slugify, pageUrl, BRAND, INITIAL_HASH, photoUrl, resizeImage,
+  durText, plural, statusBadge, STATUS, slugify, pageUrl, BRAND, INITIAL_HASH, photoUrl, resizeImage, STAFF_AUTH_KEY,
 } from './lib.js';
 import { renderAuth, renderNewPassword } from './auth.js';
 import { downloadXlsx } from './xlsx.js';
@@ -75,7 +75,13 @@ async function boot() {
   if (!biz) {
     // Аккаунт сотрудника — у него свой кабинет
     const { data: me } = await sb.rpc('staff_me');
-    if (me) { location.replace(pageUrl('staff.html')); return; }
+    if (me) {
+      try {
+        const k = Object.keys(localStorage).find((x) => /^sb-.*-auth-token$/.test(x));
+        if (k) { localStorage.setItem(STAFF_AUTH_KEY, localStorage.getItem(k)); localStorage.removeItem(k); }
+      } catch { /* приватный режим — войдёт ещё раз */ }
+      location.replace(pageUrl('staff.html')); return;
+    }
     return renderOnboarding();
   }
   S.biz = biz;
