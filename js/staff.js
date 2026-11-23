@@ -1,13 +1,15 @@
 // Кабинет сотрудника: только его записи, подключение своего Telegram, смена пароля
 import {
-  sb, $, esc, money, toast, toastErr, modal, busy, fmtPhone, telLink, waLink, zonedToUtc, dateStrInTz,
+  sb, $, $$, esc, money, toast, toastErr, modal, busy, fmtPhone, telLink, waLink, zonedToUtc, dateStrInTz,
   timeStrInTz, todayInTz, addDays, isoWeekday, WD_SHORT, MONTHS_SHORT, humanDate, plural, statusBadge, pageUrl, BRAND,
 } from './lib.js';
 
 const STAFF_DOMAIN = 'staff.jazylam.kz';
 const DAYS_BACK = 1, DAYS_AHEAD = 21;
 const root = $('#root');
-const S = { me: null, items: [], day: null, timer: null };
+const S = { me: null, items: [], day: null, timer: null, earn: [] };
+const METHODS = [['cash', '💵 Наличные'], ['kaspi', '📱 Kaspi'], ['card', '💳 Карта']];
+const methodName = (m) => (METHODS.find((x) => x[0] === m) || ['', m])[1];
 const tz = () => S.me.business.timezone;
 
 sb.auth.onAuthStateChange((event) => { if (event === 'SIGNED_OUT') { S.me = null; showLogin(); } });
@@ -77,6 +79,7 @@ function renderShell() {
     <div class="container"><main class="page">
       <div class="page-h"><h2>👋 ${esc(me.name)}</h2><span class="muted small">${esc(me.title || '')}</span></div>
       ${b.active ? '' : '<div class="alert alert-warn" style="margin-bottom:12px">Онлайн-запись сейчас приостановлена — новые клиенты не записываются. Сообщите администратору.</div>'}
+      <div id="earn" style="margin-bottom:14px"></div>
       <div id="tg" style="margin-bottom:14px"></div>
       <div id="sum" class="muted small" style="margin-bottom:6px"></div>
       <div class="days" id="days"></div>
@@ -101,9 +104,9 @@ function renderTg() {
       await refreshMe(); toast('Telegram отключён');
     });
   } else if (me.bot_username) {
-    box.innerHTML = `<div class="card" style="padding:14px">
-      <b>Получайте свои записи в Telegram</b>
-      <p class="muted small" style="margin:4px 0 10px">Кто к вам записался, отмены, переносы и каждое утро — список клиентов на день. Только ваши, без чужих.</p>
+    box.innerHTML = `<div class="card" style="padding:12px">
+      <b>📩 Свои записи — в Telegram</b>
+      <p class="muted small" style="margin:2px 0 8px">Кто записался, отмены, переносы и список на день в 8:00.</p>
       <div class="row" style="gap:8px;flex-wrap:wrap">
         <a class="btn btn-tg" target="_blank" rel="noopener" href="https://t.me/${esc(me.bot_username)}?start=m_${esc(me.tg_link_code)}">Подключить Telegram</a>
         <button class="btn btn-ghost" id="tgCheck">Я нажал «Запустить» — проверить</button></div></div>`;
@@ -132,6 +135,130 @@ async function load() {
   S.items = data || [];
   drawDays(from);
   drawList();
+  loadEarn();
+}
+
+// ---------- Заработок ----------
+const weekStart = (today) => addDays(today, -(isoWeekday(today) - 1));
+const monthStart = (today) => today.slice(0, 8) + '01';
+
+async function loadEarn() {
+  const today = todayInTz(tz());
+  const from = [weekStart(today), monthStart(today)].sort()[0];
+  const { data, error } = await sb.rpc('staff_earnings', {
+    p_from: zonedToUtc(from, '00:00', tz()).toISOString(),
+    p_to: zonedToUtc(addDays(today, 1), '00:00', tz()).toISOString(),
+  });
+  if (error) return;
+  S.earn = data || [];
+  drawEarn();
+}
+
+function drawEarn() {
+  const box = $('#earn');
+  if (!box) return;
+  const today = todayInTz(tz()), w = weekStart(today), m = monthStart(today);
+  const sum = (fromDay) => S.earn.filter((e) => dateStrInTz(e.occurred_at, tz()) >= fromDay).reduce((a, e) => a + e.amount, 0);
+  const cnt = (fromDay) => S.earn.filter((e) => dateStrInTz(e.occurred_at, tz()) >= fromDay).length;
+  const cell = (label, v, n) => `<div class="card" style="padding:10px 6px;text-align:center"><div class="muted small">${label}</div>
+    <div style="font-size:17px;font-weight:800;letter-spacing:-.02em;white-space:nowrap">${money(v) || '0 ₸'}</div><div class="muted small">${n} ${plural(n, 'клиент', 'клиента', 'клиентов')}</div></div>`;
+  box.innerHTML = `<div class="page-h" style="margin-bottom:8px;flex-wrap:wrap;gap:8px"><h3 style="margin:0">💰 Мой заработок</h3>
+      <span class="row" style="gap:6px"><button class="btn btn-sm btn-pri" id="walkin">+ Без записи</button><button class="btn btn-sm btn-ghost" id="hist">История</button></span></div>
+    <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px">${cell('Сегодня', sum(today), cnt(today))}${cell('Неделя', sum(w), cnt(w))}${cell('Месяц', sum(m), cnt(m))}</div>`;
+  $('#walkin').onclick = () => payModal(null);
+  $('#hist').onclick = historyModal;
+}
+
+// Окно «Оплатил»: сумма, способ, комментарий. b — запись; без неё — клиент без записи.
+function payModal(b) {
+  const edit = b && b.earning_id;
+  const e0 = edit ? S.earn.find((x) => x.id === b.earning_id) : null;
+  const amount0 = edit ? b.paid : (b && b.price != null ? b.price : '');
+  const method0 = edit ? b.paid_method : 'cash';
+  const m = modal({
+    title: b ? `${b.client_name}${edit ? ' — оплата' : ''}` : 'Клиент без записи',
+    body: `<form id="pf" class="stack" novalidate>
+      ${b ? `<div class="muted small">${[timeStrInTz(b.starts_at, tz()), b.service_name, b.price != null ? 'по записи ' + money(b.price) : ''].filter(Boolean).map(esc).join(' · ')}</div>`
+        : `<div class="form-grid"><label class="field"><span>Имя клиента <span class="muted">(необязательно)</span></span><input class="input" name="client" maxlength="80"></label>
+           <label class="field"><span>Услуга <span class="muted">(необязательно)</span></span><input class="input" name="service" maxlength="120" placeholder="Стрижка"></label></div>`}
+      <label class="field"><span>Сколько заплатил клиент, ₸</span>
+        <input class="input" name="amount" type="number" inputmode="numeric" min="1" max="10000000" step="1" value="${esc(amount0)}" required style="font-size:24px;font-weight:800" autofocus></label>
+      <div><span class="small" style="font-weight:600">Как заплатил</span>
+        <div class="seg seg3" id="meth" style="margin-top:6px">${METHODS.map(([k, t]) => `<button type="button" data-k="${k}" class="${k === method0 ? 'on' : ''}">${t}</button>`).join('')}</div></div>
+      <label class="field"><span>Комментарий <span class="muted">(необязательно)</span></span><input class="input" name="note" maxlength="300" value="${esc(e0?.note || '')}"></label>
+    </form>`,
+    footer: `<button class="btn" data-a="close">Отмена</button><button class="btn btn-pri btn-lg" data-a="save">${edit ? 'Сохранить' : '✅ Записать оплату'}</button>`,
+  });
+  let method = method0;
+  $$('#meth button', m.el).forEach((btn) => { btn.onclick = () => { method = btn.dataset.k; $$('#meth button', m.el).forEach((x) => x.classList.toggle('on', x === btn)); }; });
+  $('[data-a=close]', m.el).onclick = m.close;
+  const f = $('#pf', m.el);
+  const save = (ev) => busy(ev.target, async () => {
+    const amount = Math.round(Number(f.amount.value));
+    if (!amount || amount < 1) return toastErr('Введите сумму');
+    const { error } = await sb.rpc('staff_add_earning', {
+      p_amount: amount, p_method: method, p_booking: b ? b.id : null,
+      p_client: b ? null : f.client.value.trim() || null, p_service: b ? null : f.service.value.trim() || null,
+      p_note: f.note.value.trim() || null,
+    });
+    if (error) return toastErr(error);
+    toast(`Записано: ${money(amount)}`);
+    m.close();
+    await load();
+  });
+  $('[data-a=save]', m.el).onclick = save;
+  f.onsubmit = (ev) => { ev.preventDefault(); save({ target: $('[data-a=save]', m.el) }); };
+  setTimeout(() => f.amount.focus(), 50);
+}
+
+// История оплат за 30 дней: можно исправить или удалить свою запись в течение суток
+async function historyModal() {
+  const today = todayInTz(tz());
+  const m = modal({ title: 'Мои оплаты за 30 дней', body: '<div class="spinner"></div>' });
+  const { data, error } = await sb.rpc('staff_earnings', {
+    p_from: zonedToUtc(addDays(today, -30), '00:00', tz()).toISOString(),
+    p_to: zonedToUtc(addDays(today, 1), '00:00', tz()).toISOString(),
+  });
+  if (error) { m.close(); return toastErr(error); }
+  const rows = data || [];
+  const total = rows.reduce((a, e) => a + e.amount, 0);
+  m.body.innerHTML = rows.length ? `<p class="muted small" style="margin-top:0">Всего: <b>${money(total)}</b> · ${rows.length} ${plural(rows.length, 'оплата', 'оплаты', 'оплат')}. Исправить или удалить можно в течение 24 часов, потом — только администратор.</p>
+    <div class="day-list">${rows.map((e) => `<div class="item" data-id="${e.id}">
+      <div class="t" style="min-width:74px">${esc(humanDate(dateStrInTz(e.occurred_at, tz()), false))}<div class="muted small" style="font-weight:400">${timeStrInTz(e.occurred_at, tz())}</div></div>
+      <div class="grow"><b>${money(e.amount)}</b> <span class="muted small">${esc(methodName(e.method))}</span>
+        <div class="muted small">${[e.client_name, e.service_name, e.note].filter(Boolean).map(esc).join(' · ') || 'без имени'}</div></div>
+      ${e.editable ? '<button class="btn btn-sm btn-ghost" data-e title="Исправить">✏️</button><button class="btn btn-sm btn-ghost" data-d title="Удалить">🗑</button>' : ''}</div>`).join('')}</div>` : '<div class="empty">Пока оплат нет</div>';
+  $$('.item', m.body).forEach((row) => {
+    const id = row.dataset.id, e = rows.find((x) => x.id === id);
+    const ed = $('[data-e]', row), de = $('[data-d]', row);
+    if (ed) ed.onclick = () => { m.close(); editEarning(e); };
+    if (de) de.onclick = async () => {
+      if (!window.confirm(`Удалить оплату ${money(e.amount)}?`)) return;
+      const { error: er } = await sb.rpc('staff_delete_earning', { p_id: id });
+      if (er) return toastErr(er);
+      toast('Удалено'); m.close(); await load();
+    };
+  });
+}
+
+function editEarning(e) {
+  const m = modal({
+    title: 'Исправить оплату',
+    body: `<form id="ef" class="stack" novalidate>
+      <label class="field"><span>Сумма, ₸</span><input class="input" name="amount" type="number" inputmode="numeric" min="1" value="${e.amount}" style="font-size:24px;font-weight:800"></label>
+      <div class="seg seg3" id="meth">${METHODS.map(([k, t]) => `<button type="button" data-k="${k}" class="${k === e.method ? 'on' : ''}">${t}</button>`).join('')}</div>
+      <label class="field"><span>Комментарий</span><input class="input" name="note" maxlength="300" value="${esc(e.note || '')}"></label></form>`,
+    footer: '<button class="btn" data-a="close">Отмена</button><button class="btn btn-pri" data-a="save">Сохранить</button>',
+  });
+  let method = e.method;
+  $$('#meth button', m.el).forEach((btn) => { btn.onclick = () => { method = btn.dataset.k; $$('#meth button', m.el).forEach((x) => x.classList.toggle('on', x === btn)); }; });
+  $('[data-a=close]', m.el).onclick = m.close;
+  $('[data-a=save]', m.el).onclick = (ev) => busy(ev.target, async () => {
+    const f = $('#ef', m.el);
+    const { error } = await sb.rpc('staff_update_earning', { p_id: e.id, p_amount: Math.round(Number(f.amount.value)), p_method: method, p_note: f.note.value.trim() || null });
+    if (error) return toastErr(error);
+    toast('Сохранено'); m.close(); await load();
+  });
 }
 
 const active = (b) => b.status !== 'cancelled';
@@ -171,15 +298,18 @@ function drawList() {
     + (act.length ? ` · ${act.length} ${plural(act.length, 'клиент', 'клиента', 'клиентов')}${sum ? ' · ' + money(sum) : ''}` : '');
   if (!items.length) { box.innerHTML = '<div class="card empty"><div class="ico">🗓</div>На этот день у вас записей нет</div>'; return; }
   box.innerHTML = `<div class="card day-list">${items.map((b) => `
-    <div class="item ${b.status === 'cancelled' ? 'cancelled' : ''}">
+    <div class="item ${b.status === 'cancelled' ? 'cancelled' : ''}" style="flex-wrap:wrap">
       <div class="t">${timeStrInTz(b.starts_at, tz())}<div class="muted small" style="font-weight:400">до ${timeStrInTz(b.ends_at, tz())}</div></div>
       <div class="grow"><div class="who" style="justify-content:flex-start"><b>${esc(b.client_name)}</b> <span class="muted small">${fmtPhone(b.client_phone)}</span></div>
         <div class="muted small">${[b.service_name, b.price != null ? money(b.price) : '', b.source === 'online' ? 'онлайн' : ''].filter(Boolean).map(esc).join(' · ')}</div>
         ${b.comment ? `<div class="small">💬 ${esc(b.comment)}</div>` : ''}</div>
-      ${statusBadge(b.status)}
-      ${active(b) ? `<a class="btn btn-sm btn-ghost" href="${telLink(b.client_phone)}" title="Позвонить">📞</a>
-      <a class="btn btn-sm btn-ghost" target="_blank" rel="noopener" href="${esc(waLink(b.client_phone))}" title="Написать в WhatsApp">💬</a>` : ''}
+      ${b.paid != null ? `<span class="badge b-confirmed" title="${esc(methodName(b.paid_method))}">✅ ${money(b.paid)}</span>` : statusBadge(b.status)}
+      ${active(b) ? `<div class="row" style="flex-basis:100%;gap:8px">
+        <a class="btn btn-sm btn-ghost" href="${telLink(b.client_phone)}" title="Позвонить">📞</a>
+        <a class="btn btn-sm btn-ghost" target="_blank" rel="noopener" href="${esc(waLink(b.client_phone))}" title="Написать в WhatsApp">💬</a>
+        <button class="btn btn-sm ${b.paid != null ? '' : 'btn-pri'} grow" data-pay="${b.id}">${b.paid != null ? '✏️ Изменить оплату' : '💰 Оплатил'}</button></div>` : ''}
     </div>`).join('')}</div>`;
+  $$('[data-pay]', box).forEach((btn) => { btn.onclick = () => payModal(S.items.find((x) => x.id === btn.dataset.pay)); });
 }
 
 function passwordModal() {

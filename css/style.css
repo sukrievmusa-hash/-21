@@ -105,6 +105,8 @@ p { margin: 0 0 .8em; }
 .b-approved { background: var(--ok-soft); color: var(--ok); }
 .b-rejected { background: var(--danger-soft); color: var(--danger); }
 .chip { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border: 1px solid var(--line); border-radius: 999px; background: #fff; font-size: 14px; }
+button.chip { cursor: pointer; font: inherit; font-size: 14px; }
+.chip.on { background: var(--pri); border-color: var(--pri); color: #fff; font-weight: 700; }
 
 .alert { padding: 12px 14px; border-radius: var(--r-sm); border: 1px solid; font-size: 14px; }
 .alert-warn { background: var(--warn-soft); border-color: #fde68a; color: #78350f; }
@@ -239,6 +241,8 @@ table.table { width: 100%; border-collapse: collapse; font-size: 14px; }
 .seg { display: grid; grid-template-columns: 1fr 1fr; background: #f1f5f9; border-radius: 12px; padding: 4px; margin-bottom: 16px; }
 .seg button { border: 0; background: transparent; padding: 9px; border-radius: 9px; font: inherit; font-weight: 700; color: #475569; cursor: pointer; }
 .seg button.on { background: #fff; color: var(--text); box-shadow: 0 1px 3px rgba(0,0,0,.1); }
+.seg.seg3 { grid-template-columns: repeat(3, 1fr); margin-bottom: 4px; }
+.seg.seg3 button { padding: 12px 4px; font-size: 14px; }
 
 /* ====== Страница записи ====== */
 .bk { max-width: 620px; margin: 0 auto; padding: 0 14px 40px; }
