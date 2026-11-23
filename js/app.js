@@ -71,7 +71,12 @@ async function boot() {
   S.plans = plans || [];
   if (error) { root.innerHTML = `<div class="empty">Ошибка загрузки: ${esc(errMsg(error))}<br><button class="btn" onclick="location.reload()">Обновить</button></div>`; return; }
   S.settings = settings || {};
-  if (!biz) return renderOnboarding();
+  if (!biz) {
+    // Аккаунт сотрудника — у него свой кабинет
+    const { data: me } = await sb.rpc('staff_me');
+    if (me) { location.replace(pageUrl('staff.html')); return; }
+    return renderOnboarding();
+  }
   S.biz = biz;
   await loadRefs();
   renderShell();
@@ -690,7 +695,9 @@ function renderStaff() {
     <div id="list">${S.staff.map((s) => `<div class="list-item ${s.is_active ? '' : 'inactive'}" data-id="${s.id}">
       <span class="avatar">${esc(s.name[0]?.toUpperCase() || '?')}</span>
       <div class="grow"><b>${esc(s.name)}</b>${s.title ? ` <span class="muted">· ${esc(s.title)}</span>` : ''} ${s.is_active ? '' : '<span class="badge b-cancelled">не работает</span>'}
-        <div class="muted small">${esc(scheduleText(s.id))}</div></div><span class="muted">›</span></div>`).join('') || '<div class="card empty">Сотрудников пока нет</div>'}</div>`;
+        <div class="muted small">${esc(scheduleText(s.id))}</div>
+        <div class="small" style="margin-top:2px">${s.user_id ? `🔑 вход: <b>${esc(s.login)}</b>${s.tg_chat_id ? ' · ✈️ Telegram подключён' : ' · Telegram не подключён'}` : '<span class="muted">🔒 нет входа — откройте, чтобы выдать логин и пароль</span>'}</div></div><span class="muted">›</span></div>`).join('') || '<div class="card empty">Сотрудников пока нет</div>'}</div>
+    <p class="muted small" style="margin-top:12px">Каждый сотрудник со своим входом видит только свои записи на странице <a href="${esc(pageUrl('staff.html'))}" target="_blank">кабинета сотрудника</a> и получает в Telegram только своих клиентов.</p>`;
   $('#add').onclick = () => {
     if (activeStaff().length >= limit) return toastErr(`На вашем тарифе можно сотрудников: ${limit}. Выберите тариф побольше в разделе «Подписка»`);
     staffModal(null);
@@ -723,6 +730,7 @@ function staffModal(s) {
       <div><h3 style="margin:8px 0 4px">График работы</h3>${rows.join('')}
         <button type="button" class="btn btn-sm btn-ghost" id="copyMon">Скопировать понедельник на все рабочие дни</button></div>
       ${!isNew ? '<div><h3 style="margin:8px 0 4px">Отпуск и выходные дни</h3><div id="off"></div></div>' : ''}
+      ${!isNew ? '<div><h3 style="margin:8px 0 4px">🔑 Личный кабинет сотрудника</h3><div id="acc"></div></div>' : ''}
     </form>`;
   const m = modal({
     title: isNew ? 'Новый сотрудник' : s.name, body, wide: true,
@@ -743,8 +751,13 @@ function staffModal(s) {
   $('[data-a=close]', m.el).onclick = m.close;
   if (!isNew) {
     timeOffEditor($('#off', m.el), s.id);
+    staffAccessEditor($('#acc', m.el), s);
     $('[data-a=del]', m.el).onclick = async () => {
       if (!(await confirmDlg(`Удалить «${s.name}»? Прошлые записи останутся в журнале без мастера.`, 'Удалить', true))) return;
+      if (s.user_id) {
+        const r = await sb.functions.invoke('account', { body: { action: 'staff_login_remove', staff_id: s.id } });
+        if (r.error) return toastErr(await fnErr(r.error));
+      }
       const { error } = await sb.from('staff').delete().eq('id', s.id);
       if (error) return toastErr(error);
       await loadRefs(); toast('Удалено'); m.close(); renderStaff();
@@ -776,6 +789,67 @@ function staffModal(s) {
       await loadRefs(); toast('Сохранено'); m.close(); renderStaff();
     });
   };
+}
+
+// Логин и пароль сотрудника: выдать, сменить пароль, закрыть доступ
+function staffAccessEditor(box, s) {
+  const draw = () => {
+    if (s.user_id) {
+      box.innerHTML = `<div class="card" style="padding:12px">
+        <div>Логин: <b>${esc(s.login)}</b></div>
+        <div class="muted small" style="margin:4px 0 10px">Telegram сотрудника: ${s.tg_chat_id ? '✈️ подключён — ему приходят его записи' : 'не подключён (сотрудник подключает сам в своём кабинете)'}</div>
+        <div class="row" style="flex-wrap:wrap;gap:8px">
+          <button type="button" class="btn btn-sm" data-x="pwd">🔄 Новый пароль</button>
+          <button type="button" class="btn btn-sm btn-ghost" data-x="login">Сменить логин</button>
+          <button type="button" class="btn btn-sm btn-danger" data-x="off">Закрыть доступ</button>
+        </div></div>`;
+      $('[data-x=pwd]', box).onclick = (e) => call(e.target, 'staff_password_reset', {});
+      $('[data-x=login]', box).onclick = () => form(s.login);
+      $('[data-x=off]', box).onclick = async (e) => {
+        if (!(await confirmDlg(`Закрыть доступ для «${s.name}»? Сотрудник больше не сможет войти, уведомления в Telegram прекратятся. Записи останутся.`, 'Закрыть доступ', true))) return;
+        await busy(e.target, async () => {
+          const r = await sb.functions.invoke('account', { body: { action: 'staff_login_remove', staff_id: s.id } });
+          if (r.error) return toastErr(await fnErr(r.error));
+          Object.assign(s, { user_id: null, login: null, tg_chat_id: null });
+          await loadRefs(); renderStaff(); draw(); toast('Доступ закрыт');
+        });
+      };
+    } else form(`${S.biz.slug}-${slugify(s.name) || 'master'}`.slice(0, 40));
+  };
+  const form = (val) => {
+    box.innerHTML = `<p class="muted small" style="margin:0 0 8px">Выдайте сотруднику логин и пароль: он будет видеть только своих клиентов и получать в Telegram только свои записи.</p>
+      <div class="row" style="gap:8px;flex-wrap:wrap"><input class="input grow" name="login" maxlength="40" autocapitalize="off" autocomplete="off" value="${esc(val)}" placeholder="логин латиницей">
+      <button type="button" class="btn btn-pri" data-x="make">${s.user_id ? 'Сохранить логин' : 'Выдать вход'}</button></div>
+      <small class="muted">Латинские буквы, цифры, точка, дефис. Пароль создастся сам.</small>`;
+    const inp = $('[name=login]', box);
+    inp.oninput = () => { inp.value = inp.value.toLowerCase().replace(/[^a-z0-9._-]/g, ''); };
+    $('[data-x=make]', box).onclick = (e) => {
+      const login = inp.value.trim();
+      if (login.length < 3) return toastErr('Логин — минимум 3 символа');
+      call(e.target, 'staff_login_set', { login });
+    };
+  };
+  const call = (btn, action, extra) => busy(btn, async () => {
+    const r = await sb.functions.invoke('account', { body: { action, staff_id: s.id, ...extra } });
+    if (r.error) return toastErr(await fnErr(r.error));
+    await loadRefs();
+    Object.assign(s, S.staff.find((x) => x.id === s.id) || {});
+    draw(); renderStaff();
+    credentialsModal(s.name, r.data.login, r.data.password);
+  });
+  draw();
+}
+
+function credentialsModal(name, login, password) {
+  const url = pageUrl('staff.html');
+  const text = `Здравствуйте, ${name}! Ваш личный кабинет в ${BRAND} — там ваши записи и клиенты.\n\nВход: ${url}\nЛогин: ${login}\nПароль: ${password}\n\nПосле входа нажмите «Подключить Telegram», чтобы получать уведомления о своих записях.`;
+  const m = modal({
+    title: `Вход для ${name}`,
+    body: `<div class="alert alert-warn" style="margin-bottom:10px">Запишите или отправьте сейчас — пароль больше не покажется. Забудет — нажмите «Новый пароль».</div>
+      <div class="card" style="padding:12px;font-size:17px;line-height:1.7">Адрес: <b>${esc(url)}</b><br>Логин: <b>${esc(login)}</b><br>Пароль: <b style="font-family:monospace;letter-spacing:1px">${esc(password)}</b></div>`,
+    footer: `<button class="btn" data-a="copy">Скопировать</button><a class="btn btn-pri" target="_blank" rel="noopener" href="https://wa.me/?text=${encodeURIComponent(text)}">Отправить в WhatsApp</a>`,
+  });
+  $('[data-a=copy]', m.el).onclick = () => copyText(text);
 }
 
 async function timeOffEditor(box, staffId) {
