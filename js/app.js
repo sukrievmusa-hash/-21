@@ -3,9 +3,9 @@ import {
   normPhone, fmtPhone, phoneMask, waLink, telLink, zonedToUtc, dateStrInTz, timeStrInTz, minutesInTz,
   todayInTz, addDays, isoWeekday, WD_SHORT, WD_FULL, humanDate, humanDateTime, fmtDateShort, minsToHHMM,
   durText, plural, statusBadge, STATUS, slugify, pageUrl, BRAND, INITIAL_HASH, photoUrl, resizeImage, STAFF_AUTH_KEY,
-} from './lib.js?v=20261123c';
-import { renderAuth, renderNewPassword } from './auth.js?v=20261123c';
-import { downloadXlsx } from './xlsx.js?v=20261123c';
+} from './lib.js?v=20261123d';
+import { renderAuth, renderNewPassword } from './auth.js?v=20261123d';
+import { downloadXlsx } from './xlsx.js?v=20261123d';
 
 const root = $('#root');
 const S = {
@@ -1009,16 +1009,49 @@ function staffAccessEditor(box, s) {
   draw();
 }
 
+// Логин и пароль — отдельными сообщениями WhatsApp: в WhatsApp нельзя скопировать часть сообщения,
+// а так мастер копирует логин и пароль одним нажатием. Ссылка сама подставляет логин на странице входа.
 function credentialsModal(name, login, password) {
-  const url = pageUrl('staff.html');
-  const text = `Здравствуйте, ${name}! Ваш личный кабинет в ${BRAND} — там ваши записи и клиенты.\n\nВход: ${url}\nЛогин: ${login}\nПароль: ${password}\n\nПосле входа нажмите «Подключить Telegram», чтобы получать уведомления о своих записях.`;
+  const url = `${pageUrl('staff.html')}?login=${encodeURIComponent(login)}`;
+  const msgs = [
+    ['Приветствие и ссылка', `Здравствуйте, ${name}! Ваш личный кабинет в ${BRAND} — там ваши записи и клиенты.\n\nВход: ${url}\n\nЛогин и пароль пришлю следующими сообщениями — нажмите на сообщение и скопируйте.\nПосле входа нажмите «Подключить Telegram», чтобы получать уведомления о своих записях.`],
+    ['Логин', login],
+    ['Пароль', password],
+  ];
+  const key = `jz_staff_wa_${login}`;
   const m = modal({
     title: `Вход для ${name}`,
-    body: `<div class="alert alert-warn" style="margin-bottom:10px">Запишите или отправьте сейчас — пароль больше не покажется. Забудет — нажмите «Новый пароль».</div>
-      <div class="card" style="padding:12px;font-size:17px;line-height:1.7">Адрес: <b>${esc(url)}</b><br>Логин: <b>${esc(login)}</b><br>Пароль: <b style="font-family:monospace;letter-spacing:1px">${esc(password)}</b></div>`,
-    footer: `<button class="btn" data-a="copy">Скопировать</button><a class="btn btn-pri" target="_blank" rel="noopener" href="https://wa.me/?text=${encodeURIComponent(text)}">Отправить в WhatsApp</a>`,
+    body: `<div class="alert alert-warn" style="margin-bottom:12px">Пароль больше не покажется — отправьте сейчас. Забудет — нажмите «Новый пароль».</div>
+      <div class="card" style="padding:12px;margin-bottom:12px">
+        ${[['Логин', login], ['Пароль', password]].map(([t, v], i) => `<div style="display:grid;grid-template-columns:1fr auto;gap:2px 8px;align-items:center;${i ? 'margin-top:10px' : ''}">
+          <span class="muted small">${t}</span><button class="btn btn-sm" data-copy="${i}" style="grid-row:span 2">Копировать</button>
+          <b style="font-family:monospace;font-size:17px;letter-spacing:.5px;word-break:break-all">${esc(v)}</b></div>`).join('')}
+      </div>
+      <label class="field" style="margin-bottom:10px"><span>WhatsApp сотрудника <span class="muted">(чтобы все 3 сообщения ушли в один чат)</span></span>
+        <input class="input" name="wa" type="tel" inputmode="tel" placeholder="+7 (___) ___-__-__" value="${esc(store.get(key, ''))}"></label>
+      <p class="muted small" style="margin:0 0 8px">Нажмите по очереди — WhatsApp откроется 3 раза, каждый раз нажмите «Отправить»:</p>
+      <div class="stack" style="gap:8px">${msgs.map(([t], i) => `<button class="btn btn-block" data-send="${i}" style="justify-content:flex-start">
+        <span class="badge b-booked">${i + 1}</span><span style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(t)}</span><span class="grow"></span><b data-ok="${i}" style="color:var(--ok)"></b></button>`).join('')}</div>`,
+    footer: '<button class="btn" data-a="all">Скопировать всё одним текстом</button><button class="btn btn-pri" data-a="close">Готово</button>',
   });
-  $('[data-a=copy]', m.el).onclick = () => copyText(text);
+  const wa = $('[name=wa]', m.el);
+  phoneMask(wa);
+  $$('[data-copy]', m.el).forEach((b) => { b.onclick = () => copyText(b.dataset.copy === '0' ? login : password); });
+  $$('[data-send]', m.el).forEach((b) => {
+    b.onclick = () => {
+      const i = +b.dataset.send, phone = normPhone(wa.value);
+      if (wa.value.trim() && !phone) return toastErr('Проверьте номер WhatsApp');
+      if (phone) store.set(key, wa.value);
+      window.open(waLink(phone || '', msgs[i][1]), '_blank', 'noopener');
+      $(`[data-ok="${i}"]`, m.el).textContent = '✓';
+      b.classList.remove('btn-pri');
+      const next = $(`[data-send="${i + 1}"]`, m.el);
+      if (next) next.classList.add('btn-pri');
+    };
+  });
+  $('[data-send="0"]', m.el).classList.add('btn-pri');
+  $('[data-a=all]', m.el).onclick = () => copyText(`${msgs[0][1]}\n\nЛогин: ${login}\nПароль: ${password}`);
+  $('[data-a=close]', m.el).onclick = m.close;
 }
 
 async function timeOffEditor(box, staffId) {

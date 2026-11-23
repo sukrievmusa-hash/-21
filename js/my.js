@@ -1,4 +1,4 @@
-import { sb, $, esc, money, toast, toastErr, confirmDlg, humanDate, dateStrInTz, timeStrInTz, telLink, pageUrl, brandify, prepayAmount } from './lib.js?v=20261123c';
+import { sb, $, esc, money, toast, toastErr, confirmDlg, humanDate, dateStrInTz, timeStrInTz, telLink, pageUrl, brandify, prepayAmount } from './lib.js?v=20261123d';
 
 const params = new URLSearchParams(location.search);
 const token = params.get('t') || '';

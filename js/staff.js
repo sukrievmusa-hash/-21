@@ -2,9 +2,9 @@
 import {
   sb, $, $$, esc, money, toast, toastErr, modal, busy, fmtPhone, telLink, waLink, zonedToUtc, dateStrInTz,
   timeStrInTz, todayInTz, addDays, confirmDlg, isoWeekday, WD_SHORT, MONTHS_SHORT, humanDate, plural, pageUrl, BRAND, copyText, STAFF_AUTH_KEY, MIGRATED_FROM,
-} from './lib.js?v=20261123c';
-import { ico } from './icons.js?v=20261123c';
-import { downloadXlsx } from './xlsx.js?v=20261123c';
+} from './lib.js?v=20261123d';
+import { ico } from './icons.js?v=20261123d';
+import { downloadXlsx } from './xlsx.js?v=20261123d';
 
 const STAFF_DOMAIN = 'staff.jazylam.kz';
 const DAYS_BACK = 1, DAYS_AHEAD = 21;
@@ -84,6 +84,9 @@ function showLogin(msg) {
       <a class="btn btn-ghost btn-block" href="app.html">Я владелец бизнеса</a>
     </form></div></div></div>`;
   const f = $('#lf');
+  // ссылка из WhatsApp вида staff.html?login=... — логин уже подставлен, остаётся вставить пароль
+  const pre = new URLSearchParams(location.search).get('login');
+  if (pre) { f.login.value = pre.trim().toLowerCase(); setTimeout(() => f.password.focus(), 50); }
   f.onsubmit = async (e) => {
     e.preventDefault();
     const login = f.login.value.trim().toLowerCase();
