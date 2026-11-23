@@ -5,13 +5,14 @@ import {
   durText, plural, statusBadge, STATUS, slugify, pageUrl, BRAND, INITIAL_HASH, photoUrl, resizeImage,
 } from './lib.js';
 import { renderAuth, renderNewPassword } from './auth.js';
+import { downloadXlsx } from './xlsx.js';
 
 const root = $('#root');
 const S = {
   user: null, biz: null, settings: {}, plans: [], staff: [], services: [], links: [], hours: [],
   day: null, view: store.get('kezek_view', 'grid'), dayBookings: [],
 };
-const TABS = [['journal', 'Журнал'], ['clients', 'Клиенты'], ['services', 'Услуги'], ['staff', 'Сотрудники'], ['settings', 'Настройки'], ['ai', 'ИИ-ассистент'], ['billing', 'Подписка']];
+const TABS = [['journal', 'Журнал'], ['clients', 'Клиенты'], ['services', 'Услуги'], ['staff', 'Сотрудники'], ['cash', 'Касса'], ['settings', 'Настройки'], ['ai', 'ИИ-ассистент'], ['billing', 'Подписка']];
 const CATS = ['Барбершоп', 'Салон красоты', 'Ногтевая студия', 'Брови и ресницы', 'Массаж', 'Косметология', 'Репетитор / курсы',
   'Автомойка / детейлинг', 'Фото / видео студия', 'Медицина / стоматология', 'Психолог / консультант', 'Фитнес / тренер', 'Другое'];
 const TEMPLATES = {
@@ -174,7 +175,7 @@ function route() {
   const tab = TABS.some(([k]) => k === t) ? t : 'journal';
   $$('.tab').forEach((a) => a.classList.toggle('active', a.dataset.t === tab));
   renderBanner();
-  const fn = { journal: renderJournal, clients: renderClients, services: renderServices, staff: renderStaff, ai: renderAi, settings: renderSettings, billing: renderBilling }[tab];
+  const fn = { journal: renderJournal, clients: renderClients, services: renderServices, staff: renderStaff, cash: renderCash, ai: renderAi, settings: renderSettings, billing: renderBilling }[tab];
   fn();
 }
 
@@ -789,6 +790,168 @@ function staffModal(s) {
       await loadRefs(); toast('Сохранено'); m.close(); renderStaff();
     });
   };
+}
+
+// ---------- Касса: заработок сотрудников и выгрузка в Excel ----------
+const PAY = { cash: 'Наличные', kaspi: 'Kaspi', card: 'Карта' };
+const cashState = { preset: 'week', from: null, to: null, staff: '' };
+
+function cashRange() {
+  const today = todayInTz(tz());
+  const mon = addDays(today, -(isoWeekday(today) - 1));
+  const ms = today.slice(0, 8) + '01';
+  const prev = (() => { const [y, m] = ms.split('-').map(Number); const d = new Date(Date.UTC(y, m - 2, 1)); return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-01`; })();
+  switch (cashState.preset) {
+    case 'today': return [today, today, 'Сегодня'];
+    case 'yesterday': return [addDays(today, -1), addDays(today, -1), 'Вчера'];
+    case 'week': return [mon, today, 'Эта неделя'];
+    case 'lastweek': return [addDays(mon, -7), addDays(mon, -1), 'Прошлая неделя'];
+    case 'month': return [ms, today, 'Этот месяц'];
+    case 'lastmonth': return [prev, addDays(ms, -1), 'Прошлый месяц'];
+    default: return [cashState.from || ms, cashState.to || today, 'Свой период'];
+  }
+}
+
+async function fetchEarnings(fromDay, toDay) {
+  const a = zonedToUtc(fromDay, '00:00', tz()).toISOString();
+  const b = zonedToUtc(addDays(toDay, 1), '00:00', tz()).toISOString();
+  const out = [];
+  for (let off = 0; off < 50000; off += 1000) {
+    const { data, error } = await sb.from('earnings').select('*').eq('business_id', S.biz.id)
+      .gte('occurred_at', a).lt('occurred_at', b).order('occurred_at', { ascending: false }).range(off, off + 999);
+    if (error) throw error;
+    out.push(...data);
+    if (data.length < 1000) break;
+  }
+  return out;
+}
+
+async function renderCash() {
+  const [from, to, label] = cashRange();
+  const presets = [['today', 'Сегодня'], ['yesterday', 'Вчера'], ['week', 'Неделя'], ['lastweek', 'Прошлая неделя'], ['month', 'Месяц'], ['lastmonth', 'Прошлый месяц'], ['custom', 'Свой период']];
+  $('#page').innerHTML = `<div class="page-h"><h2>Касса</h2>
+      <span class="row" style="gap:8px;flex-wrap:wrap"><button class="btn btn-sm" id="addE">+ Добавить оплату</button><button class="btn btn-sm btn-pri" id="xl">⬇️ Скачать Excel</button></span></div>
+    <div class="row" style="gap:6px;flex-wrap:wrap;margin-bottom:10px">${presets.map(([k, t]) => `<button class="chip ${cashState.preset === k ? 'on' : ''}" data-p="${k}">${t}</button>`).join('')}</div>
+    <div class="row ${cashState.preset === 'custom' ? '' : 'hide'}" id="cust" style="gap:8px;flex-wrap:wrap;margin-bottom:10px;align-items:center">
+      <input class="input input-sm" type="date" id="cf" value="${from}"> — <input class="input input-sm" type="date" id="ct" value="${to}"></div>
+    <div class="row" style="gap:8px;align-items:center;margin-bottom:12px"><span class="muted small">${esc(label)}: ${esc(humanDate(from, false))} — ${esc(humanDate(to, false))}</span>
+      <select class="select" id="fs" style="max-width:220px;margin-left:auto"><option value="">Все сотрудники</option>${S.staff.map((x) => `<option value="${x.id}" ${cashState.staff === x.id ? 'selected' : ''}>${esc(x.name)}</option>`).join('')}</select></div>
+    <div id="cashBody"><div class="spinner"></div></div>`;
+  $$('[data-p]').forEach((b) => { b.onclick = () => { cashState.preset = b.dataset.p; renderCash(); }; });
+  if (cashState.preset === 'custom') {
+    $('#cf').onchange = $('#ct').onchange = () => { cashState.from = $('#cf').value; cashState.to = $('#ct').value; if (cashState.from && cashState.to && cashState.from <= cashState.to) renderCash(); else toastErr('Проверьте даты'); };
+  }
+  $('#fs').onchange = (e) => { cashState.staff = e.target.value; renderCash(); };
+
+  let rows;
+  try { rows = await fetchEarnings(from, to); } catch (e) { $('#cashBody').innerHTML = `<div class="empty">Не удалось загрузить: ${esc(errMsg(e))}</div>`; return; }
+  if (cashState.staff) rows = rows.filter((r) => r.staff_id === cashState.staff);
+  drawCash(rows, from, to, label);
+}
+
+function drawCash(rows, from, to, label) {
+  const total = rows.reduce((a, r) => a + r.amount, 0);
+  const byMethod = (m) => rows.filter((r) => r.method === m).reduce((a, r) => a + r.amount, 0);
+  const staffMap = new Map();
+  for (const r of rows) {
+    const k = r.staff_id || ('x:' + (r.staff_name || '—'));
+    const o = staffMap.get(k) || { name: r.staff_name || 'Без сотрудника', n: 0, sum: 0, cash: 0, kaspi: 0, card: 0 };
+    o.n++; o.sum += r.amount; o[r.method] += r.amount;
+    staffMap.set(k, o);
+  }
+  const staffRows = [...staffMap.values()].sort((a, b) => b.sum - a.sum);
+  const box = $('#cashBody');
+  if (!rows.length) { box.innerHTML = '<div class="card empty"><div class="ico">💰</div>За этот период оплат нет.<br><span class="muted small">Сотрудники отмечают оплату кнопкой «Оплатил» в своём кабинете. Вы можете добавить оплату сами.</span></div>'; $('#xl').onclick = () => toastErr('Нечего выгружать — за период нет оплат'); $('#addE').onclick = () => earningModal(null); return; }
+  box.innerHTML = `<div class="grid grid-4 keep-2" style="margin-bottom:14px">
+      <div class="stat card"><div class="v">${money(total)}</div><div class="l">Выручка · ${rows.length} ${plural(rows.length, 'клиент', 'клиента', 'клиентов')}</div></div>
+      <div class="stat card"><div class="v">${money(Math.round(total / rows.length))}</div><div class="l">Средний чек</div></div>
+      <div class="stat card"><div class="v">${money(byMethod('cash'))}</div><div class="l">💵 Наличные</div></div>
+      <div class="stat card"><div class="v">${money(byMethod('kaspi') + byMethod('card'))}</div><div class="l">📱 Kaspi и 💳 карта</div></div></div>
+    <h3 style="margin:6px 0">По сотрудникам</h3>
+    <div class="table-wrap card" style="margin-bottom:16px"><table class="table"><thead><tr><th>Сотрудник</th><th>Клиентов</th><th>Наличные</th><th>Kaspi</th><th>Карта</th><th>Итого</th></tr></thead><tbody>
+      ${staffRows.map((o) => `<tr><td><b>${esc(o.name)}</b></td><td>${o.n}</td><td>${money(o.cash)}</td><td>${money(o.kaspi)}</td><td>${money(o.card)}</td><td><b>${money(o.sum)}</b></td></tr>`).join('')}
+      </tbody></table></div>
+    <h3 style="margin:6px 0">Все оплаты</h3>
+    <div class="card day-list">${rows.map((r) => `<div class="item" data-id="${r.id}" style="cursor:pointer">
+      <div class="t" style="min-width:78px">${esc(humanDate(dateStrInTz(r.occurred_at, tz()), false))}<div class="muted small" style="font-weight:400">${timeStrInTz(r.occurred_at, tz())}</div></div>
+      <div class="grow"><b>${esc(r.client_name || 'Клиент без имени')}</b> <span class="muted small">${esc(r.staff_name || '')}</span>
+        <div class="muted small">${[r.service_name, PAY[r.method], r.price_expected != null && r.price_expected !== r.amount ? 'по записи ' + money(r.price_expected) : '', r.note, r.created_by === 'owner' ? 'добавлено администратором' : ''].filter(Boolean).map(esc).join(' · ')}</div></div>
+      <b>${money(r.amount)}</b></div>`).join('')}</div>`;
+  $$('.item', box).forEach((el) => { el.onclick = () => earningModal(rows.find((r) => r.id === el.dataset.id)); });
+  $('#addE').onclick = () => earningModal(null);
+  $('#xl').onclick = () => exportCash(rows, from, to, label, staffRows);
+}
+
+function exportCash(rows, from, to, label, staffRows) {
+  const H = (v) => ({ v, head: true });
+  const total = rows.reduce((a, r) => a + r.amount, 0);
+  const sorted = [...rows].sort((a, b) => new Date(a.occurred_at) - new Date(b.occurred_at));
+  const detail = [['Дата', 'Время', 'Сотрудник', 'Клиент', 'Услуга', 'Способ оплаты', 'Сумма', 'Цена по записи', 'Комментарий'].map(H),
+    ...sorted.map((r) => [{ v: dateStrInTz(r.occurred_at, tz()), t: 'date' }, timeStrInTz(r.occurred_at, tz()), r.staff_name || '', r.client_name || '', r.service_name || '',
+      PAY[r.method] || r.method, { v: r.amount, t: 'money' }, r.price_expected != null ? { v: r.price_expected, t: 'money' } : '',
+      [r.note, r.created_by === 'owner' ? 'добавил администратор' : ''].filter(Boolean).join('; ')])];
+  const n = detail.length - 1;
+  detail.push([{ v: 'ИТОГО', bold: true }, '', '', '', '', '', { v: total, t: 'money', bold: true }]);
+  const bySt = [['Сотрудник', 'Клиентов', 'Наличные', 'Kaspi', 'Карта', 'Итого', 'Средний чек'].map(H),
+    ...staffRows.map((o) => [o.name, { v: o.n, t: 'num' }, { v: o.cash, t: 'money' }, { v: o.kaspi, t: 'money' }, { v: o.card, t: 'money' }, { v: o.sum, t: 'money', bold: true }, { v: Math.round(o.sum / o.n), t: 'money' }])];
+  const sum = (k) => staffRows.reduce((a, o) => a + o[k], 0);
+  bySt.push([{ v: 'ИТОГО', bold: true }, { v: rows.length, t: 'num', bold: true }, { v: sum('cash'), t: 'money', bold: true }, { v: sum('kaspi'), t: 'money', bold: true }, { v: sum('card'), t: 'money', bold: true }, { v: total, t: 'money', bold: true }, { v: Math.round(total / rows.length), t: 'money', bold: true }]);
+  const days = new Map();
+  for (const r of rows) { const d = dateStrInTz(r.occurred_at, tz()); const o = days.get(d) || { n: 0, sum: 0 }; o.n++; o.sum += r.amount; days.set(d, o); }
+  const byDay = [['Дата', 'Клиентов', 'Выручка'].map(H),
+    ...[...days.entries()].sort().map(([d, o]) => [{ v: d, t: 'date' }, { v: o.n, t: 'num' }, { v: o.sum, t: 'money' }])];
+  const biz = S.biz.name.replace(/[^\p{L}\p{N}]+/gu, '_').replace(/^_+|_+$/g, '').slice(0, 30) || 'kassa';
+  downloadXlsx(`${biz}_касса_${from}_${to}.xlsx`, [
+    { name: 'Оплаты', widths: [12, 8, 20, 22, 22, 15, 14, 15, 30], rows: detail, filterTo: n + 1 },
+    { name: 'По сотрудникам', widths: [26, 11, 14, 14, 14, 15, 14], rows: bySt, filterTo: bySt.length - 1 },
+    { name: 'По дням', widths: [14, 11, 15], rows: byDay },
+  ]);
+  toast('Excel-файл скачан');
+}
+
+// Добавить оплату за сотрудника или исправить/удалить любую
+function earningModal(e) {
+  const isNew = !e;
+  const staff = S.staff.filter((x) => x.is_active || (e && x.id === e.staff_id));
+  const day = e ? dateStrInTz(e.occurred_at, tz()) : todayInTz(tz());
+  const time = e ? timeStrInTz(e.occurred_at, tz()) : timeStrInTz(Date.now(), tz());
+  const m = modal({
+    title: isNew ? 'Добавить оплату' : 'Оплата', wide: true,
+    body: `<form id="ef" class="stack" novalidate><div class="form-grid">
+      <label class="field"><span>Сотрудник</span><select class="select" name="staff">${staff.map((x) => `<option value="${x.id}" ${e && e.staff_id === x.id ? 'selected' : ''}>${esc(x.name)}</option>`).join('')}</select></label>
+      <label class="field"><span>Сумма, ₸</span><input class="input" name="amount" type="number" inputmode="numeric" min="1" value="${e ? e.amount : ''}" required></label>
+      <label class="field"><span>Дата</span><input class="input" name="day" type="date" value="${day}"></label>
+      <label class="field"><span>Время</span><input class="input" name="time" type="time" value="${time}"></label>
+      <label class="field"><span>Способ оплаты</span><select class="select" name="method">${Object.entries(PAY).map(([k, t]) => `<option value="${k}" ${e && e.method === k ? 'selected' : ''}>${t}</option>`).join('')}</select></label>
+      <label class="field"><span>Клиент</span><input class="input" name="client" maxlength="80" value="${esc(e?.client_name || '')}"></label>
+      <label class="field"><span>Услуга</span><input class="input" name="service" maxlength="120" value="${esc(e?.service_name || '')}"></label>
+      <label class="field"><span>Комментарий</span><input class="input" name="note" maxlength="300" value="${esc(e?.note || '')}"></label></div></form>`,
+    footer: `${!isNew ? '<button class="btn btn-danger" data-a="del">Удалить</button>' : ''}<button class="btn" data-a="close">Отмена</button><button class="btn btn-pri" data-a="save">Сохранить</button>`,
+  });
+  $('[data-a=close]', m.el).onclick = m.close;
+  if (!isNew) $('[data-a=del]', m.el).onclick = async () => {
+    if (!(await confirmDlg(`Удалить оплату ${money(e.amount)}?`, 'Удалить', true))) return;
+    const { error } = await sb.from('earnings').delete().eq('id', e.id);
+    if (error) return toastErr(error);
+    toast('Удалено'); m.close(); renderCash();
+  };
+  $('[data-a=save]', m.el).onclick = (ev) => busy(ev.target, async () => {
+    const f = $('#ef', m.el);
+    const amount = Math.round(Number(f.amount.value));
+    if (!amount || amount < 1) return toastErr('Введите сумму');
+    if (!f.staff.value) return toastErr('Выберите сотрудника');
+    if (!f.day.value) return toastErr('Укажите дату');
+    const payload = {
+      staff_id: f.staff.value, amount, method: f.method.value,
+      occurred_at: zonedToUtc(f.day.value, f.time.value || '12:00', tz()).toISOString(),
+      client_name: f.client.value.trim() || null, service_name: f.service.value.trim() || null, note: f.note.value.trim() || null,
+    };
+    const { error } = isNew
+      ? await sb.from('earnings').insert({ ...payload, business_id: S.biz.id, created_by: 'owner' })
+      : await sb.from('earnings').update(payload).eq('id', e.id);
+    if (error) return toastErr(error);
+    toast('Сохранено'); m.close(); renderCash();
+  });
 }
 
 // Логин и пароль сотрудника: выдать, сменить пароль, закрыть доступ
