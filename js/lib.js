@@ -2,8 +2,23 @@ import { CONFIG } from './config.js';
 
 // Запоминаем адрес до того, как клиент Supabase уберёт токены из ссылки
 export const INITIAL_HASH = location.hash;
+// Кабинет сотрудника хранит свой вход отдельно: на одном телефоне можно быть
+// одновременно владельцем (app.html) и мастером (staff.html), и вход одного не выбивает другого.
+export const STAFF_AUTH_KEY = 'jazylam-staff-auth';
+const IS_STAFF_PAGE = /staff\.html$/.test(location.pathname);
+// Переход со старой версии: вход мастера лежал в общем ключе — один раз переносим его
+export let MIGRATED_FROM = null;
+if (IS_STAFF_PAGE) {
+  try {
+    if (!localStorage.getItem(STAFF_AUTH_KEY)) {
+      const k = Object.keys(localStorage).find((x) => /^sb-.*-auth-token$/.test(x));
+      if (k) { localStorage.setItem(STAFF_AUTH_KEY, localStorage.getItem(k)); MIGRATED_FROM = k; }
+    }
+  } catch { /* приватный режим */ }
+}
 export const sb = window.supabase.createClient(CONFIG.SUPABASE_URL, CONFIG.SUPABASE_KEY, {
-  auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true },
+  auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: !IS_STAFF_PAGE,
+          ...(IS_STAFF_PAGE ? { storageKey: STAFF_AUTH_KEY } : {}) },
 });
 export const BRAND = CONFIG.BRAND;
 

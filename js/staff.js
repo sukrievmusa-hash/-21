@@ -1,7 +1,7 @@
 // Кабинет мастера: свои записи, приём оплат, заработок, смена/выходной, Telegram
 import {
   sb, $, $$, esc, money, toast, toastErr, modal, busy, fmtPhone, telLink, waLink, zonedToUtc, dateStrInTz,
-  timeStrInTz, todayInTz, addDays, confirmDlg, isoWeekday, WD_SHORT, MONTHS_SHORT, humanDate, plural, pageUrl, BRAND, copyText,
+  timeStrInTz, todayInTz, addDays, confirmDlg, isoWeekday, WD_SHORT, MONTHS_SHORT, humanDate, plural, pageUrl, BRAND, copyText, STAFF_AUTH_KEY, MIGRATED_FROM,
 } from './lib.js';
 import { ico } from './icons.js';
 import { downloadXlsx } from './xlsx.js';
@@ -18,8 +18,32 @@ boot();
 async function boot() {
   const { data: { session } } = await sb.auth.getSession();
   if (!session) return showLogin();
-  const { data: me, error } = await sb.rpc('staff_me');
-  if (error) { root.innerHTML = `<div class="empty">Ошибка загрузки: ${esc(error.message)}<br><button class="btn" onclick="location.reload()">Обновить</button></div>`; return; }
+  let { data: me, error } = await sb.rpc('staff_me');
+  if (error && isAuthErr(error)) {
+    // токен устарел (телефон долго спал) — обновляем и пробуем ещё раз, без выхода
+    const r = await sb.auth.refreshSession();
+    if (r.error) { await sb.auth.signOut({ scope: 'local' }); return showLogin('Сессия истекла — войдите ещё раз'); }
+    ({ data: me, error } = await sb.rpc('staff_me'));
+  }
+  if (error) {
+    root.innerHTML = `<div class="auth-wrap"><div class="auth-card"><div class="card center stack">
+      <div class="ok-ico">📶</div><h3>Нет связи с сервером</h3>
+      <p class="muted">Проверьте интернет. Вход сохранён — выходить не нужно.</p>
+      <button class="btn btn-pri btn-block" id="retry">Повторить</button></div></div></div>`;
+    $('#retry').onclick = () => boot();
+    return;
+  }
+  if (MIGRATED_FROM) {
+    // перенесли вход из общего ключа: мастеру — убираем старую копию; владельцу — убираем нашу
+    try {
+      if (me) localStorage.removeItem(MIGRATED_FROM);
+      else { // владелец: возвращаем (возможно обновлённый) токен в общий ключ, чтобы его не выбило
+        localStorage.setItem(MIGRATED_FROM, localStorage.getItem(STAFF_AUTH_KEY));
+        localStorage.removeItem(STAFF_AUTH_KEY);
+      }
+    } catch { /* ignore */ }
+    if (!me) { location.replace(pageUrl('app.html')); return; }
+  }
   if (!me) {
     // Вошёл владелец — ему в обычный кабинет
     const { data: biz } = await sb.from('businesses').select('id').eq('owner_id', session.user.id).maybeSingle();
@@ -39,11 +63,17 @@ async function boot() {
   S.timer = setInterval(load, 60000);
 }
 
-document.addEventListener('visibilitychange', () => { if (!document.hidden && S.me) { refreshMe(); load(); } });
+const isAuthErr = (e) => /jwt|token|expired|401|not authenticated/i.test(`${e?.message} ${e?.code} ${e?.status}`);
 
-function showLogin() {
+// Вернулись в приложение: тихо обновляем данные; при сбое сети вход не трогаем
+document.addEventListener('visibilitychange', () => { if (!document.hidden && S.me) { refreshMe(); load(); } });
+window.addEventListener('online', () => { if (S.me) { refreshMe(); load(); } else boot(); });
+
+function showLogin(msg) {
+  clearInterval(S.timer);
   root.innerHTML = `<div class="auth-wrap"><div class="auth-card">
     <div class="center" style="margin-bottom:18px"><a class="logo" href="index.html"><i>J</i><span>${esc(BRAND)}</span></a></div>
+    ${msg ? `<div class="alert alert-warn" style="margin-bottom:12px">${esc(msg)}</div>` : ''}
     <div class="card"><form id="lf" class="stack" novalidate>
       <div><h2 style="margin-bottom:4px">Кабинет сотрудника</h2>
         <p class="muted small" style="margin:0">Логин и пароль выдаёт администратор</p></div>
@@ -229,8 +259,9 @@ function tgModal() {
 }
 
 async function refreshMe() {
-  const { data } = await sb.rpc('staff_me');
-  if (!data) return boot();
+  const { data, error } = await sb.rpc('staff_me');
+  if (error) return;            // сеть или устаревший токен — оставляем экран как есть
+  if (!data) return boot();     // доступ действительно закрыли
   S.me = data;
   renderTg();
 }
@@ -242,7 +273,11 @@ async function load() {
     p_from: zonedToUtc(from, '00:00', tz()).toISOString(),
     p_to: zonedToUtc(to, '00:00', tz()).toISOString(),
   });
-  if (error) { toastErr(error); return; }
+  if (error) {
+    if (isAuthErr(error)) await sb.auth.refreshSession();
+    else if (navigator.onLine) toastErr(error);   // без интернета не сыпем ошибками каждую минуту
+    return;
+  }
   S.items = data || [];
   drawDays();
   drawList();
