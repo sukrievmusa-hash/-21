@@ -220,3 +220,11 @@ i.pd.m-kaspi { background: #ef4444; } i.pd.m-cash { background: #10b981; } i.pd.
 /* Уведомления сверху, чтобы не закрывать кнопку */
 .sx-body #toasts { top: 84px; bottom: auto; }
 .sx-body .toast { border-radius: 999px; font-weight: 600; }
+
+/* --- исправления после проверки --- */
+/* iOS увеличивает страницу при фокусе на поле с шрифтом меньше 16px */
+.sx-in, .input, .select, .textarea { font-size: 16px; }
+.sx-act.done { background: #ecfdf5; color: #047857; cursor: default; font-size: 14px; }
+.sx-act span { white-space: nowrap; }
+.sx-noshow { flex: none !important; background: #fff; border: 1px solid #e2e8f0; color: #64748b; padding: 0 14px; }
+.sx-payc .t { width: 66px; }

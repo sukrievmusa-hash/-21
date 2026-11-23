@@ -3,9 +3,9 @@ import {
   normPhone, fmtPhone, phoneMask, waLink, telLink, zonedToUtc, dateStrInTz, timeStrInTz, minutesInTz,
   todayInTz, addDays, isoWeekday, WD_SHORT, WD_FULL, humanDate, humanDateTime, fmtDateShort, minsToHHMM,
   durText, plural, statusBadge, STATUS, slugify, pageUrl, BRAND, INITIAL_HASH, photoUrl, resizeImage, STAFF_AUTH_KEY,
-} from './lib.js';
-import { renderAuth, renderNewPassword } from './auth.js';
-import { downloadXlsx } from './xlsx.js';
+} from './lib.js?v=20261123c';
+import { renderAuth, renderNewPassword } from './auth.js?v=20261123c';
+import { downloadXlsx } from './xlsx.js?v=20261123c';
 
 const root = $('#root');
 const S = {
