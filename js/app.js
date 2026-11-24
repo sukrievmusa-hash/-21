@@ -3,16 +3,18 @@ import {
   normPhone, fmtPhone, phoneMask, waLink, telLink, zonedToUtc, dateStrInTz, timeStrInTz, minutesInTz,
   todayInTz, addDays, isoWeekday, WD_SHORT, WD_FULL, humanDate, humanDateTime, fmtDateShort, minsToHHMM,
   durText, plural, statusBadge, STATUS, slugify, pageUrl, BRAND, INITIAL_HASH, photoUrl, resizeImage, STAFF_AUTH_KEY,
-} from './lib.js?v=20261124a';
-import { renderAuth, renderNewPassword } from './auth.js?v=20261124a';
-import { downloadXlsx } from './xlsx.js?v=20261124a';
+} from './lib.js?v=20261124b';
+import { renderAuth, renderNewPassword } from './auth.js?v=20261124b';
+import { downloadXlsx } from './xlsx.js?v=20261124b';
 
 const root = $('#root');
 const S = {
   user: null, biz: null, settings: {}, plans: [], staff: [], services: [], links: [], hours: [],
-  day: null, view: store.get('kezek_view', 'grid'), dayBookings: [],
+  day: null, view: store.get('kezek_view', 'grid'), dayBookings: [], role: 'owner', mgr: null,
 };
-const TABS = [['journal', 'Журнал'], ['clients', 'Клиенты'], ['services', 'Услуги'], ['staff', 'Сотрудники'], ['cash', 'Касса'], ['settings', 'Настройки'], ['ai', 'ИИ-ассистент'], ['billing', 'Подписка']];
+const TABS = [['journal', 'Журнал'], ['clients', 'Клиенты'], ['services', 'Услуги'], ['staff', 'Сотрудники'], ['cash', 'Касса'], ['acc', 'Бухгалтерия'], ['settings', 'Настройки'], ['ai', 'ИИ-ассистент'], ['billing', 'Подписка']];
+const MGR_TABS = [['journal', 'Журнал'], ['clients', 'Клиенты'], ['cash', 'Касса']];
+const tabsNow = () => (S.role === 'manager' ? MGR_TABS : TABS);
 const CATS = ['Барбершоп', 'Салон красоты', 'Ногтевая студия', 'Брови и ресницы', 'Массаж', 'Косметология', 'Репетитор / курсы',
   'Автомойка / детейлинг', 'Фото / видео студия', 'Медицина / стоматология', 'Психолог / консультант', 'Фитнес / тренер', 'Другое'];
 const TEMPLATES = {
@@ -49,7 +51,7 @@ let recovery = INITIAL_HASH.includes('type=recovery');
 const afterRecovery = () => { recovery = false; boot(); };
 sb.auth.onAuthStateChange((event) => {
   if (event === 'PASSWORD_RECOVERY') { recovery = true; renderNewPassword(root, afterRecovery); }
-  if (event === 'SIGNED_OUT') { S.user = null; S.biz = null; showAuth(); }
+  if (event === 'SIGNED_OUT') { S.user = null; S.biz = null; S.role = 'owner'; S.mgr = null; showAuth(); }
 });
 window.addEventListener('hashchange', () => { if (S.biz) route(); });
 boot();
@@ -73,6 +75,12 @@ async function boot() {
   if (error) { root.innerHTML = `<div class="empty">Ошибка загрузки: ${esc(errMsg(error))}<br><button class="btn" onclick="location.reload()">Обновить</button></div>`; return; }
   S.settings = settings || {};
   if (!biz) {
+    // Менеджер входит в тот же app.html, но видит урезанный кабинет
+    const { data: mm } = await sb.rpc('manager_me');
+    if (mm) {
+      S.role = 'manager'; S.mgr = mm.manager; S.biz = mm.business;
+      await loadRefs(); renderShell(); route(); return;
+    }
     // Аккаунт сотрудника — у него свой кабинет
     const { data: me } = await sb.rpc('staff_me');
     if (me) {
@@ -84,6 +92,7 @@ async function boot() {
     }
     return renderOnboarding();
   }
+  S.role = 'owner'; S.mgr = null;
   S.biz = biz;
   await loadRefs();
   renderShell();
@@ -98,7 +107,7 @@ async function reloadBiz() {
 async function loadRefs() {
   const id = S.biz.id;
   const [st, sv, ln, wh] = await Promise.all([
-    sb.from('staff').select('*').eq('business_id', id).order('sort').order('created_at'),
+    S.role === 'manager' ? sb.rpc('manager_staff') : sb.from('staff').select('*').eq('business_id', id).order('sort').order('created_at'),
     sb.from('services').select('*').eq('business_id', id).order('sort').order('name'),
     sb.from('staff_services').select('*').eq('business_id', id),
     sb.from('working_hours').select('*').eq('business_id', id).order('start_time'),
@@ -165,11 +174,11 @@ function renderShell() {
     <header class="topbar">
       <div class="container">
         <a class="logo" href="index.html"><i>J</i><span>${esc(BRAND)}</span></a>
-        <span class="biz grow" id="bizName">${esc(S.biz.name)}</span>
+        <span class="biz grow" id="bizName">${esc(S.biz.name)}${S.role === 'manager' ? ` · <span class="muted">менеджер ${esc(S.mgr.name)}</span>` : ''}</span>
         <button class="btn btn-sm btn-pri" id="shareBtn" title="Ссылка для записи, QR-код, отправить клиентам">🔗 Ссылка и QR</button>
         <button class="btn btn-sm btn-ghost" id="logout" title="Выйти">Выйти</button>
       </div>
-      <div class="container"><nav class="tabs">${TABS.map(([k, t]) => `<a class="tab" href="#${k}" data-t="${k}">${t}</a>`).join('')}</nav></div>
+      <div class="container"><nav class="tabs">${tabsNow().map(([k, t]) => `<a class="tab" href="#${k}" data-t="${k}">${t}</a>`).join('')}</nav></div>
     </header>
     <div class="container"><div id="banner" style="margin-top:14px"></div><main class="page" id="page"></main></div>`;
   $('#logout').onclick = () => sb.auth.signOut();
@@ -178,10 +187,10 @@ function renderShell() {
 
 function route() {
   const t = location.hash.slice(1);
-  const tab = TABS.some(([k]) => k === t) ? t : 'journal';
+  const tab = tabsNow().some(([k]) => k === t) ? t : 'journal';
   $$('.tab').forEach((a) => a.classList.toggle('active', a.dataset.t === tab));
   renderBanner();
-  const fn = { journal: renderJournal, clients: renderClients, services: renderServices, staff: renderStaff, cash: renderCash, ai: renderAi, settings: renderSettings, billing: renderBilling }[tab];
+  const fn = { journal: renderJournal, clients: renderClients, services: renderServices, staff: renderStaff, cash: S.role === 'manager' ? renderMgrCash : renderCash, acc: renderAcc, ai: renderAi, settings: renderSettings, billing: renderBilling }[tab];
   fn();
 }
 
@@ -191,6 +200,10 @@ function renderBanner() {
   const b = $('#banner');
   const d = daysLeft();
   const support = S.settings.support_contact ? ` Поддержка: ${esc(S.settings.support_contact)}` : '';
+  if (S.role === 'manager') {
+    b.innerHTML = S.biz.is_blocked || d <= 0 ? '<div class="alert alert-danger">⛔ Подписка бизнеса неактивна — сообщите владельцу.</div>' : '';
+    return;
+  }
   if (S.biz.is_blocked) b.innerHTML = `<div class="alert alert-danger">Аккаунт заблокирован.${support}</div>`;
   else if (d <= 0) b.innerHTML = `<div class="alert alert-danger">⛔ Подписка закончилась — онлайн-запись для клиентов отключена. <a href="#billing"><b>Продлить</b></a></div>`;
   else if (S.biz.plan === 'trial') b.innerHTML = `<div class="alert alert-info">🎁 Пробный период: осталось ${d} ${plural(d, 'день', 'дня', 'дней')}. <a href="#billing">Тарифы</a></div>`;
@@ -274,7 +287,7 @@ function onbFlag(key) {
 
 function renderJournal() {
   if (!S.day) S.day = todayInTz(tz());
-  $('#page').innerHTML = `${checklistHtml()}${shareBarHtml()}
+  $('#page').innerHTML = `${S.role === 'manager' ? '' : checklistHtml()}${shareBarHtml()}
     <div class="page-h">
       <div class="day-nav">
         <button class="btn btn-sm" id="prev" aria-label="Предыдущий день">‹</button>
@@ -445,8 +458,11 @@ function bookingModal(b, pre = {}) {
   </form>`;
   const footer = `${!isNew && b.status !== 'cancelled' ? '<button class="btn btn-danger" data-a="cancel">Отменить запись</button>' : ''}
     ${!isNew && b.status === 'cancelled' ? '<button class="btn" data-a="restore">Восстановить</button>' : ''}
+    ${S.role === 'manager' && !isNew && b.status !== 'cancelled' ? '<button class="btn" data-a="pay">💰 Принять оплату</button>' : ''}
     <button class="btn" data-a="close">Закрыть</button><button class="btn btn-pri" data-a="save">${isNew ? 'Записать' : 'Сохранить'}</button>`;
   const m = modal({ title: isNew ? 'Новая запись' : 'Запись', body, footer });
+  const payBtn = $('[data-a=pay]', m.el);
+  if (payBtn) payBtn.onclick = () => { m.close(); mgrPayModal({ booking: b }); };
   const f = $('#bf', m.el);
   f.phone.value = b ? fmtPhone(b.client_phone) : (pre.phone ? fmtPhone(pre.phone) : '');
   f.name.value = b ? b.client_name : (pre.name || '');
@@ -520,7 +536,7 @@ async function renderClients() {
   let timer;
   $('#q').oninput = (e) => { clearTimeout(timer); timer = setTimeout(() => load(e.target.value), 300); };
   const from = new Date(Date.now() - 30 * 86400000), to = new Date();
-  sb.rpc('owner_stats', { p_from: from.toISOString(), p_to: to.toISOString() }).then(({ data }) => {
+  if (S.role !== 'manager') sb.rpc('owner_stats', { p_from: from.toISOString(), p_to: to.toISOString() }).then(({ data }) => {
     if (!data || !$('#kpi')) return;
     $('#kpi').innerHTML = [
       [data.total, 'записей за 30 дней'], [data.online, 'из них онлайн'],
@@ -537,7 +553,7 @@ async function renderClients() {
     box.innerHTML = `<table class="table"><thead><tr><th>Клиент</th><th>Телефон</th><th>Визитов</th><th>Неявок</th><th>Последняя запись</th><th>Сумма</th></tr></thead>
       <tbody>${data.map((c) => `<tr class="clickable" data-id="${c.id}"><td><b>${esc(c.name)}</b>${c.tg ? ' <span title="Подключён Telegram">🔔</span>' : ''}${c.notes ? `<div class="muted small">${esc(c.notes.slice(0, 60))}</div>` : ''}</td>
         <td class="nowrap">${fmtPhone(c.phone)}</td><td>${c.visits}</td><td>${c.no_shows || ''}</td>
-        <td class="nowrap">${c.last_visit ? fmtDateShort(c.last_visit, tz()) : '—'}</td><td class="nowrap">${c.spent ? money(c.spent) : ''}</td></tr>`).join('')}</tbody></table>`;
+        <td class="nowrap">${c.last_visit ? fmtDateShort(c.last_visit, tz()) : '—'}</td><td class="nowrap">${c.spent && S.role !== 'manager' ? money(c.spent) : ''}</td></tr>`).join('')}</tbody></table>`;
     $$('tr[data-id]', box).forEach((tr) => { tr.onclick = () => clientModal(data.find((c) => c.id === tr.dataset.id), () => load($('#q').value)); });
   }
 }
@@ -704,12 +720,84 @@ function renderStaff() {
       <div class="grow"><b>${esc(s.name)}</b>${s.title ? ` <span class="muted">· ${esc(s.title)}</span>` : ''} ${s.is_active ? '' : '<span class="badge b-cancelled">не работает</span>'}
         <div class="muted small">${esc(scheduleText(s.id))}</div>
         <div class="small" style="margin-top:2px">${s.user_id ? `🔑 вход: <b>${esc(s.login)}</b>${s.tg_chat_id ? ' · ✈️ Telegram подключён' : ' · Telegram не подключён'}` : '<span class="muted">🔒 нет входа — откройте, чтобы выдать логин и пароль</span>'}</div></div><span class="muted">›</span></div>`).join('') || '<div class="card empty">Сотрудников пока нет</div>'}</div>
+    <div class="page-h" style="margin-top:22px"><h3 style="margin:0">Менеджеры</h3><button class="btn btn-sm btn-pri" id="addMgr">+ Менеджер</button></div>
+    <p class="muted small" style="margin:0 0 8px">Менеджер (администратор) ведёт журнал и клиентов, принимает оплату и расходы за сегодня и закрывает смену. Он не видит ваши финансы за прошлые дни, налог, зарплату, настройки и подписку.</p>
+    <div id="mgrs"><div class="spinner"></div></div>
     <p class="muted small" style="margin-top:12px">Каждый сотрудник со своим входом видит только свои записи на странице <a href="${esc(pageUrl('staff.html'))}" target="_blank">кабинета сотрудника</a> и получает в Telegram только своих клиентов.</p>`;
   $('#add').onclick = () => {
     if (activeStaff().length >= limit) return toastErr(`На вашем тарифе можно сотрудников: ${limit}. Выберите тариф побольше в разделе «Подписка»`);
     staffModal(null);
   };
   $$('.list-item', $('#list')).forEach((el) => { el.onclick = () => staffModal(S.staff.find((s) => s.id === el.dataset.id)); });
+  $('#addMgr').onclick = () => managerModal(null);
+  drawManagers();
+}
+
+async function drawManagers() {
+  const { data, error } = await sb.from('managers').select('*').eq('business_id', S.biz.id).order('created_at');
+  const box = $('#mgrs');
+  if (!box) return;
+  if (error) { box.innerHTML = `<div class="alert alert-danger">${esc(errMsg(error))}</div>`; return; }
+  S.managers = data || [];
+  box.innerHTML = S.managers.map((m) => `<div class="list-item ${m.is_active ? '' : 'inactive'}" data-id="${m.id}" style="margin-bottom:8px">
+      <span class="avatar">${esc(m.name[0]?.toUpperCase() || '?')}</span>
+      <div class="grow"><b>${esc(m.name)}</b> ${m.is_active ? '' : '<span class="badge b-cancelled">отключён</span>'}
+        <div class="small muted">🔑 логин: <b>${esc(m.login || '—')}</b></div></div><span class="muted">›</span></div>`).join('')
+    || '<div class="card empty small">Менеджеров нет</div>';
+  $$('.list-item', box).forEach((el) => { el.onclick = () => managerModal(S.managers.find((m) => m.id === el.dataset.id)); });
+}
+
+async function mgrCall(btn, body, after) {
+  await busy(btn, async () => {
+    const r = await sb.functions.invoke('account', { body });
+    if (r.error) return toastErr(await fnErr(r.error));
+    await after(r.data);
+  });
+}
+
+function managerModal(mg) {
+  const isNew = !mg;
+  const m = modal({
+    title: isNew ? 'Новый менеджер' : mg.name,
+    body: `<form class="stack" novalidate>
+      <label class="field"><span>Имя</span><input class="input" name="name" maxlength="80" value="${esc(mg?.name || '')}" placeholder="Например: Асель"></label>
+      <label class="field"><span>Логин для входа</span><input class="input" name="login" maxlength="40" autocapitalize="off" autocomplete="off" value="${esc(mg?.login || `${S.biz.slug}-admin`.slice(0, 40))}">
+        <small class="muted">Латинские буквы, цифры, точка, дефис. Пароль создастся сам. Вход — на этой же странице, в поле «Email или логин».</small></label>
+      ${isNew ? '' : `<label class="check"><input type="checkbox" name="active" ${mg.is_active ? 'checked' : ''}><span>Доступ включён</span></label>`}
+    </form>`,
+    footer: `${isNew ? '' : '<button class="btn btn-danger" data-a="del">Удалить</button><button class="btn" data-a="pwd">🔄 Новый пароль</button>'}<button class="btn" data-a="close">Закрыть</button><button class="btn btn-pri" data-a="save">${isNew ? 'Создать вход' : 'Сохранить'}</button>`,
+  });
+  const f = $('form', m.el);
+  f.login.oninput = () => { f.login.value = f.login.value.toLowerCase().replace(/[^a-z0-9._-]/g, ''); };
+  $('[data-a=close]', m.el).onclick = m.close;
+  const done = async (d, name) => {
+    m.close(); await drawManagers();
+    credentialsModal(name, d.login, d.password, { page: 'app.html', who: 'менеджера' });
+  };
+  $('[data-a=save]', m.el).onclick = (e) => {
+    const name = f.name.value.trim(), login = f.login.value.trim();
+    if (!name) return toastErr('Укажите имя');
+    if (login.length < 3) return toastErr('Логин — минимум 3 символа');
+    if (isNew) return mgrCall(e.target, { action: 'manager_create', name, login }, (d) => done(d, name));
+    return busy(e.target, async () => {
+      const { error } = await sb.from('managers').update({ name, is_active: f.active.checked }).eq('id', mg.id);
+      if (error) return toastErr(error);
+      if (login !== mg.login) {
+        const r = await sb.functions.invoke('account', { body: { action: 'manager_password_reset', manager_id: mg.id, login } });
+        if (r.error) return toastErr(await fnErr(r.error));
+        await done(r.data, name);
+        return;
+      }
+      toast('Сохранено'); m.close(); drawManagers();
+    });
+  };
+  if (!isNew) {
+    $('[data-a=pwd]', m.el).onclick = (e) => mgrCall(e.target, { action: 'manager_password_reset', manager_id: mg.id }, (d) => done(d, mg.name));
+    $('[data-a=del]', m.el).onclick = async (e) => {
+      if (!(await confirmDlg(`Удалить менеджера «${mg.name}»? Он больше не сможет войти.`, 'Удалить', true))) return;
+      mgrCall(e.target, { action: 'manager_remove', manager_id: mg.id }, async () => { toast('Удалён'); m.close(); drawManagers(); });
+    };
+  }
 }
 
 function staffModal(s) {
@@ -733,6 +821,7 @@ function staffModal(s) {
         <label class="field"><span>Имя</span><input class="input" name="name" required maxlength="60" value="${esc(s?.name || '')}"></label>
         <label class="field"><span>Должность <span class="muted">(необязательно)</span></span><input class="input" name="title" maxlength="60" value="${esc(s?.title || '')}" placeholder="Барбер, мастер маникюра…"></label>
       </div>
+      <label class="field"><span>Доля мастера от выручки, % <span class="muted">(для расчёта зарплаты в «Бухгалтерии»)</span></span><input class="input" name="share" type="number" min="0" max="100" step="1" inputmode="numeric" value="${s?.share_pct ?? 0}" style="max-width:140px"></label>
       <label class="check"><input type="checkbox" name="active" ${!s || s.is_active ? 'checked' : ''}><span>Работает и принимает записи</span></label>
       <div><h3 style="margin:8px 0 4px">График работы</h3>${rows.join('')}
         <button type="button" class="btn btn-sm btn-ghost" id="copyMon">Скопировать понедельник на все рабочие дни</button></div>
@@ -784,7 +873,8 @@ function staffModal(s) {
         hours.push({ weekday: d, start: st, end: bs }, { weekday: d, start: be, end: en });
       } else hours.push({ weekday: d, start: st, end: en });
     }
-    const payload = { name, title: f.title.value.trim() || null, is_active: f.active.checked };
+    const share = Math.min(100, Math.max(0, parseInt(f.share.value, 10) || 0));
+    const payload = { name, title: f.title.value.trim() || null, is_active: f.active.checked, share_pct: share };
     await busy(e.target, async () => {
       const r = isNew
         ? await sb.from('staff').insert({ ...payload, business_id: S.biz.id, sort: S.staff.length }).select().single()
@@ -1011,10 +1101,12 @@ function staffAccessEditor(box, s) {
 
 // Логин и пароль — отдельными сообщениями WhatsApp: в WhatsApp нельзя скопировать часть сообщения,
 // а так мастер копирует логин и пароль одним нажатием. Ссылка сама подставляет логин на странице входа.
-function credentialsModal(name, login, password) {
-  const url = `${pageUrl('staff.html')}?login=${encodeURIComponent(login)}`;
+function credentialsModal(name, login, password, opts = {}) {
+  const url = `${pageUrl(opts.page || 'staff.html')}?login=${encodeURIComponent(login)}`;
   const msgs = [
-    ['Приветствие и ссылка', `Здравствуйте, ${name}! Ваш личный кабинет в ${BRAND} — там ваши записи и клиенты.\n\nВход: ${url}\n\nЛогин и пароль пришлю следующими сообщениями — нажмите на сообщение и скопируйте.\nПосле входа нажмите «Подключить Telegram», чтобы получать уведомления о своих записях.`],
+    ['Приветствие и ссылка', opts.who === 'менеджера'
+      ? `Здравствуйте, ${name}! Ваш вход в ${BRAND} (кабинет менеджера): журнал записей, клиенты, касса и закрытие смены.\n\nВход: ${url}\n\nЛогин и пароль пришлю следующими сообщениями — нажмите на сообщение и скопируйте.`
+      : `Здравствуйте, ${name}! Ваш личный кабинет в ${BRAND} — там ваши записи и клиенты.\n\nВход: ${url}\n\nЛогин и пароль пришлю следующими сообщениями — нажмите на сообщение и скопируйте.\nПосле входа нажмите «Подключить Telegram», чтобы получать уведомления о своих записях.`],
     ['Логин', login],
     ['Пароль', password],
   ];
@@ -1597,4 +1689,220 @@ async function renderBilling() {
       ${data.map((p) => `<tr><td class="nowrap">${fmtDateShort(p.created_at, tz())}</td><td>${esc(planOf(p.plan).title)}, ${p.months} мес</td><td class="nowrap">${money(p.amount)}</td><td><span class="badge b-${p.status}">${st[p.status]}</span></td></tr>`).join('')}</tbody></table></div>`;
     if (data?.some((p) => p.status === 'approved' && new Date(p.processed_at) > new Date(Date.now() - 600000))) { await reloadBiz(); renderBanner(); }
   }
+}
+
+// =====================================================================
+//  Бухгалтерия владельца и касса менеджера
+// =====================================================================
+const sum = (rows, f = (r) => r.amount) => rows.reduce((a, r) => a + (f(r) || 0), 0);
+const hhmm = (iso) => timeStrInTz(iso, tz());
+
+async function fetchExpenses(fromDay, toDay) {
+  const a = zonedToUtc(fromDay, '00:00', tz()).toISOString();
+  const b = zonedToUtc(addDays(toDay, 1), '00:00', tz()).toISOString();
+  const { data, error } = await sb.from('expenses').select('*').eq('business_id', S.biz.id)
+    .gte('occurred_at', a).lt('occurred_at', b).order('occurred_at', { ascending: false }).limit(1000);
+  if (error) throw error;
+  return data;
+}
+async function fetchClosings(fromDay, toDay) {
+  const a = zonedToUtc(fromDay, '00:00', tz()).toISOString();
+  const b = zonedToUtc(addDays(toDay, 1), '00:00', tz()).toISOString();
+  const { data, error } = await sb.from('shift_closings').select('*').eq('business_id', S.biz.id)
+    .gte('created_at', a).lt('created_at', b).order('created_at', { ascending: false }).limit(200);
+  if (error) throw error;
+  return data;
+}
+
+// ---------- Бухгалтерия (только владелец) ----------
+async function renderAcc() {
+  const [from, to, label] = cashRange();
+  const presets = [['today', 'Сегодня'], ['yesterday', 'Вчера'], ['week', 'Неделя'], ['lastweek', 'Прошлая неделя'], ['month', 'Месяц'], ['lastmonth', 'Прошлый месяц'], ['custom', 'Свой период']];
+  $('#page').innerHTML = `<div class="page-h"><h2>Бухгалтерия</h2>
+      <span class="row" style="gap:8px;flex-wrap:wrap"><button class="btn btn-sm" id="addX">+ Расход</button><button class="btn btn-sm" id="addT">+ Налоговый платёж</button></span></div>
+    <div class="row" style="gap:6px;flex-wrap:wrap;margin-bottom:10px">${presets.map(([k, t]) => `<button class="chip ${cashState.preset === k ? 'on' : ''}" data-p="${k}">${t}</button>`).join('')}</div>
+    <div class="row ${cashState.preset === 'custom' ? '' : 'hide'}" style="gap:8px;flex-wrap:wrap;margin-bottom:10px;align-items:center">
+      <input class="input input-sm" type="date" id="cf" value="${from}"> — <input class="input input-sm" type="date" id="ct" value="${to}"></div>
+    <div class="muted small" style="margin-bottom:12px">${esc(label)}: ${esc(humanDate(from, false))} — ${esc(humanDate(to, false))}</div>
+    <div id="accBody"><div class="spinner"></div></div>`;
+  $$('[data-p]').forEach((b) => { b.onclick = () => { cashState.preset = b.dataset.p; renderAcc(); }; });
+  if (cashState.preset === 'custom') {
+    $('#cf').onchange = $('#ct').onchange = () => { cashState.from = $('#cf').value; cashState.to = $('#ct').value; if (cashState.from && cashState.to && cashState.from <= cashState.to) renderAcc(); else toastErr('Проверьте даты'); };
+  }
+  $('#addX').onclick = () => expenseModal('expense');
+  $('#addT').onclick = () => expenseModal('tax');
+
+  let earn, exp, closings;
+  try { [earn, exp, closings] = await Promise.all([fetchEarnings(from, to), fetchExpenses(from, to), fetchClosings(from, to)]); }
+  catch (e) { $('#accBody').innerHTML = `<div class="empty">Не удалось загрузить: ${esc(errMsg(e))}</div>`; return; }
+  if (!$('#accBody')) return;
+
+  const rate = Number(S.biz.tax_rate ?? 4);
+  const revenue = sum(earn);
+  const costs = sum(exp.filter((x) => x.kind === 'expense'));
+  const taxPaid = sum(exp.filter((x) => x.kind === 'tax'));
+  const taxDue = Math.round(revenue * rate / 100);
+  const salary = S.staff.map((st) => {
+    const r = sum(earn.filter((e) => e.staff_id === st.id));
+    return { st, rev: r, pct: st.share_pct || 0, pay: Math.round(r * (st.share_pct || 0) / 100) };
+  }).filter((x) => x.rev > 0 || x.pct > 0);
+  const salaryTotal = sum(salary, (x) => x.pay);
+  const profit = revenue - costs - salaryTotal - taxDue;
+
+  $('#accBody').innerHTML = `<div class="grid grid-4 keep-2" style="margin-bottom:14px">
+      <div class="stat card"><div class="v">${money(revenue) || '0 ₸'}</div><div class="l">Выручка · ${earn.length} ${plural(earn.length, 'оплата', 'оплаты', 'оплат')}</div></div>
+      <div class="stat card"><div class="v">${money(costs) || '0 ₸'}</div><div class="l">Расходы</div></div>
+      <div class="stat card"><div class="v">${money(salaryTotal) || '0 ₸'}</div><div class="l">Зарплата мастерам</div></div>
+      <div class="stat card"><div class="v">${money(taxDue) || '0 ₸'}</div><div class="l">Налог ${rate}% · уплачено ${money(taxPaid) || '0 ₸'}</div></div></div>
+    <div class="card stat" style="margin-bottom:14px"><div class="v" style="color:${profit < 0 ? 'var(--danger, #b91c1c)' : 'inherit'}">${money(profit) || '0 ₸'}</div>
+      <div class="l">Чистая прибыль = выручка − расходы − зарплата − налог (оценка)</div></div>
+    <div class="card" style="margin-bottom:14px"><h3 style="margin:0 0 8px">Ставка налога</h3>
+      <div class="row" style="gap:8px;align-items:center;flex-wrap:wrap"><input class="input" id="taxr" type="number" min="0" max="30" step="0.5" value="${rate}" style="max-width:110px"> <span>% от выручки</span>
+        <button class="btn btn-sm btn-pri" id="taxs">Сохранить</button></div>
+      <p class="muted small" style="margin:8px 0 0">Налог считается от выручки за период — это ориентир для вас, не расчёт для налоговой. Ставку и порядок уплаты уточните у бухгалтера.</p></div>
+    <h3 style="margin:6px 0">Зарплата мастерам</h3>
+    <div class="table-wrap card" style="margin-bottom:16px">${salary.length ? `<table class="table"><thead><tr><th>Мастер</th><th>Выручка</th><th>Доля</th><th>К выплате</th></tr></thead><tbody>
+      ${salary.map((x) => `<tr><td><b>${esc(x.st.name)}</b></td><td>${money(x.rev) || '0 ₸'}</td><td>${x.pct}%</td><td><b>${money(x.pay) || '0 ₸'}</b></td></tr>`).join('')}
+      <tr><td><b>Итого</b></td><td>${money(sum(salary, (x) => x.rev)) || '0 ₸'}</td><td></td><td><b>${money(salaryTotal) || '0 ₸'}</b></td></tr></tbody></table>`
+      : '<div class="empty small">Нет данных. Укажите долю мастера в карточке сотрудника.</div>'}</div>
+    <h3 style="margin:6px 0">Расходы и налоговые платежи</h3>
+    <div class="card day-list" style="margin-bottom:16px">${exp.length ? exp.map((x) => `<div class="item" data-id="${x.id}" style="cursor:pointer">
+      <div class="t" style="min-width:78px">${esc(humanDate(dateStrInTz(x.occurred_at, tz()), false))}<div class="muted small" style="font-weight:400">${hhmm(x.occurred_at)}</div></div>
+      <div class="grow"><b>${esc(x.title)}</b><div class="muted small">${x.kind === 'tax' ? '🏛 налоговый платёж' : '➖ расход'}${x.created_by === 'manager' ? ' · внёс менеджер' : ''}</div></div>
+      <b>${money(x.amount)}</b></div>`).join('') : '<div class="empty small">За период расходов нет</div>'}</div>
+    <h3 style="margin:6px 0">Закрытые смены</h3>
+    <div class="card day-list">${closings.length ? closings.map((c) => `<div class="item">
+      <div class="t" style="min-width:78px">${esc(humanDate(dateStrInTz(c.created_at, tz()), false))}<div class="muted small" style="font-weight:400">${hhmm(c.created_at)}</div></div>
+      <div class="grow"><b>${esc(c.closed_by_name || (c.closed_by === 'owner' ? 'Владелец' : 'Менеджер'))}</b>
+        <div class="muted small">нал ${money(c.cash) || '0 ₸'} · безнал ${money(c.noncash) || '0 ₸'}${c.expenses ? ` · расходы ${money(c.expenses)}` : ''}${c.note ? ` · ${esc(c.note)}` : ''}</div></div>
+      <b>${money(c.gross) || '0 ₸'}</b></div>`).join('') : '<div class="empty small">За период смены не закрывались</div>'}</div>`;
+
+  $('#taxs').onclick = (e) => busy(e.target, async () => {
+    const v = Math.round(Number($('#taxr').value) * 10) / 10;
+    if (!(v >= 0 && v <= 30)) return toastErr('Ставка — от 0 до 30%');
+    const { error } = await sb.from('businesses').update({ tax_rate: v }).eq('id', S.biz.id);
+    if (error) return toastErr(error);
+    S.biz.tax_rate = v; toast('Ставка сохранена'); renderAcc();
+  });
+  $$('.item[data-id]', $('#accBody')).forEach((el) => {
+    el.onclick = async () => {
+      const x = exp.find((r) => r.id === el.dataset.id);
+      if (!x || !(await confirmDlg(`Удалить «${x.title}» на ${money(x.amount)}?`, 'Удалить', true))) return;
+      const { error } = await sb.from('expenses').delete().eq('id', x.id);
+      if (error) return toastErr(error);
+      toast('Удалено'); renderAcc();
+    };
+  });
+}
+
+function expenseModal(kind) {
+  const isTax = kind === 'tax';
+  const m = modal({
+    title: isTax ? 'Налоговый платёж' : 'Новый расход',
+    body: `<form id="xf" class="form-grid" novalidate>
+      <label class="field full"><span>${isTax ? 'За что' : 'На что'}</span><input class="input" name="title" maxlength="120" value="${isTax ? 'Налог (упрощёнка)' : ''}" placeholder="${isTax ? '' : 'Аренда, расходники, реклама…'}"></label>
+      <label class="field"><span>Сумма, ₸</span><input class="input" name="amount" type="number" inputmode="numeric" min="1"></label>
+      <label class="field"><span>Дата</span><input class="input" name="day" type="date" value="${todayInTz(tz())}"></label></form>`,
+    footer: '<button class="btn" data-a="close">Отмена</button><button class="btn btn-pri" data-a="save">Сохранить</button>',
+  });
+  $('[data-a=close]', m.el).onclick = m.close;
+  $('[data-a=save]', m.el).onclick = (e) => busy(e.target, async () => {
+    const f = $('#xf', m.el);
+    const title = f.title.value.trim(), amount = Math.round(Number(f.amount.value));
+    if (!title) return toastErr('Укажите, на что расход');
+    if (!amount || amount < 1) return toastErr('Введите сумму');
+    if (!f.day.value) return toastErr('Укажите дату');
+    const today = todayInTz(tz());
+    const at = f.day.value === today ? new Date() : zonedToUtc(f.day.value, '12:00', tz());
+    const { error } = await sb.from('expenses').insert({ business_id: S.biz.id, kind, title, amount, occurred_at: at.toISOString(), created_by: 'owner' });
+    if (error) return toastErr(error);
+    toast('Сохранено'); m.close(); renderAcc();
+  });
+}
+
+// ---------- Касса менеджера (только сегодня) ----------
+async function renderMgrCash() {
+  const day = todayInTz(tz());
+  $('#page').innerHTML = `<div class="page-h"><h2>Касса за сегодня</h2>
+      <span class="row" style="gap:8px;flex-wrap:wrap"><button class="btn btn-sm btn-pri" id="addE">+ Оплата</button><button class="btn btn-sm" id="addX">+ Расход</button><button class="btn btn-sm" id="closeS">🔒 Закрыть смену</button></span></div>
+    <div class="muted small" style="margin-bottom:12px">${esc(humanDate(day, false))}. Прошлые дни и общие итоги видит только владелец.</div>
+    <div id="mBody"><div class="spinner"></div></div>`;
+  $('#addE').onclick = () => mgrPayModal({});
+  $('#addX').onclick = () => mgrExpenseModal();
+  let earn, exp, closings;
+  try { [earn, exp, closings] = await Promise.all([fetchEarnings(day, day), fetchExpenses(day, day), fetchClosings(day, day)]); }
+  catch (e) { $('#mBody').innerHTML = `<div class="empty">Не удалось загрузить: ${esc(errMsg(e))}</div>`; return; }
+  if (!$('#mBody')) return;
+  const total = sum(earn), cash = sum(earn.filter((r) => r.method === 'cash')), costs = sum(exp);
+  $('#closeS').onclick = async (e) => {
+    if (!(await confirmDlg(`Закрыть смену? Выручка ${money(total) || '0 ₸'}, наличные ${money(cash) || '0 ₸'}, расходы ${money(costs) || '0 ₸'}. Владелец получит итог в Telegram.`, 'Закрыть смену'))) return;
+    await busy(e.target, async () => {
+      const { data, error } = await sb.rpc('close_shift', { p_note: null });
+      if (error) return toastErr(error);
+      toast(`Смена закрыта: ${money(data.gross) || '0 ₸'}`); renderMgrCash();
+    });
+  };
+  $('#mBody').innerHTML = `${closings.length ? `<div class="alert alert-info" style="margin-bottom:12px">🔒 Смена закрыта в ${hhmm(closings[0].created_at)}: выручка ${money(closings[0].gross) || '0 ₸'}. Оплаты после этого можно добавлять и закрыть смену ещё раз.</div>` : ''}
+    <div class="grid grid-4 keep-2" style="margin-bottom:14px">
+      <div class="stat card"><div class="v">${money(total) || '0 ₸'}</div><div class="l">Выручка · ${earn.length} ${plural(earn.length, 'оплата', 'оплаты', 'оплат')}</div></div>
+      <div class="stat card"><div class="v">${money(cash) || '0 ₸'}</div><div class="l">💵 Наличные</div></div>
+      <div class="stat card"><div class="v">${money(total - cash) || '0 ₸'}</div><div class="l">📱 Kaspi и 💳 карта</div></div>
+      <div class="stat card"><div class="v">${money(cash - costs) || '0 ₸'}</div><div class="l">В кассе: нал − расходы ${money(costs) || '0 ₸'}</div></div></div>
+    <h3 style="margin:6px 0">Оплаты</h3>
+    <div class="card day-list" style="margin-bottom:16px">${earn.length ? earn.map((r) => `<div class="item">
+      <div class="t" style="min-width:56px">${hhmm(r.occurred_at)}</div>
+      <div class="grow"><b>${esc(r.client_name || 'Клиент без имени')}</b> <span class="muted small">${esc(r.staff_name || '')}</span>
+        <div class="muted small">${[r.service_name, PAY[r.method], r.note].filter(Boolean).map(esc).join(' · ')}</div></div><b>${money(r.amount)}</b></div>`).join('') : '<div class="empty small">Оплат пока нет</div>'}</div>
+    <h3 style="margin:6px 0">Расходы</h3>
+    <div class="card day-list">${exp.length ? exp.map((x) => `<div class="item"><div class="t" style="min-width:56px">${hhmm(x.occurred_at)}</div>
+      <div class="grow"><b>${esc(x.title)}</b></div><b>−${money(x.amount)}</b></div>`).join('') : '<div class="empty small">Расходов нет</div>'}</div>`;
+}
+
+function mgrPayModal(pre) {
+  const bk = pre.booking || null;
+  const staff = S.staff.filter((x) => x.is_active || (bk && x.id === bk.staff_id));
+  const m = modal({
+    title: bk ? `Оплата · ${bk.client_name}` : 'Принять оплату',
+    body: `<form id="pf2" class="form-grid" novalidate>
+      <label class="field"><span>Сумма, ₸</span><input class="input" name="amount" type="number" inputmode="numeric" min="1" value="${bk?.price ?? ''}"></label>
+      <label class="field"><span>Способ оплаты</span><select class="select" name="method">${Object.entries(PAY).map(([k, t]) => `<option value="${k}">${t}</option>`).join('')}</select></label>
+      ${bk ? '' : `<label class="field"><span>Мастер</span><select class="select" name="staff"><option value="">— не указан —</option>${staff.map((x) => `<option value="${x.id}">${esc(x.name)}</option>`).join('')}</select></label>
+      <label class="field"><span>Клиент</span><input class="input" name="client" maxlength="80"></label>
+      <label class="field full"><span>Услуга</span><input class="input" name="service" maxlength="120"></label>`}
+      <label class="field full"><span>Комментарий</span><input class="input" name="note" maxlength="300"></label></form>`,
+    footer: '<button class="btn" data-a="close">Отмена</button><button class="btn btn-pri" data-a="save">Принять оплату</button>',
+  });
+  $('[data-a=close]', m.el).onclick = m.close;
+  $('[data-a=save]', m.el).onclick = (e) => busy(e.target, async () => {
+    const f = $('#pf2', m.el);
+    const amount = Math.round(Number(f.amount.value));
+    if (!amount || amount < 1) return toastErr('Введите сумму');
+    const { error } = await sb.rpc('manager_add_earning', {
+      p_amount: amount, p_method: f.method.value, p_staff: bk ? null : (f.staff.value || null), p_booking: bk ? bk.id : null,
+      p_client: bk ? null : (f.client.value.trim() || null), p_service: bk ? null : (f.service.value.trim() || null), p_note: f.note.value.trim() || null,
+    });
+    if (error) return toastErr(error);
+    toast('Оплата принята'); m.close();
+    if ($('#mBody')) renderMgrCash(); else drawDayIfJournal();
+  });
+}
+
+function mgrExpenseModal() {
+  const m = modal({
+    title: 'Расход из кассы',
+    body: `<form id="mx" class="form-grid" novalidate>
+      <label class="field full"><span>На что</span><input class="input" name="title" maxlength="120" placeholder="Расходники, вода, хозтовары…"></label>
+      <label class="field"><span>Сумма, ₸</span><input class="input" name="amount" type="number" inputmode="numeric" min="1"></label></form>`,
+    footer: '<button class="btn" data-a="close">Отмена</button><button class="btn btn-pri" data-a="save">Записать</button>',
+  });
+  $('[data-a=close]', m.el).onclick = m.close;
+  $('[data-a=save]', m.el).onclick = (e) => busy(e.target, async () => {
+    const f = $('#mx', m.el);
+    const title = f.title.value.trim(), amount = Math.round(Number(f.amount.value));
+    if (!title) return toastErr('Укажите, на что расход');
+    if (!amount || amount < 1) return toastErr('Введите сумму');
+    const { error } = await sb.rpc('manager_add_expense', { p_title: title, p_amount: amount });
+    if (error) return toastErr(error);
+    toast('Расход записан'); m.close(); renderMgrCash();
+  });
 }

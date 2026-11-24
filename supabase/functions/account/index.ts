@@ -1,5 +1,5 @@
 // Kezek — аккаунты без писем: регистрация сразу с подтверждённым email,
-// сброс пароля владельцу из админки (без SMTP) и логины/пароли сотрудников,
+// сброс пароля владельцу из админки (без SMTP) и логины/пароли сотрудников и менеджеров,
 // которые выдаёт владелец бизнеса.
 // Деплой: supabase functions deploy account --no-verify-jwt
 import { createClient } from "npm:@supabase/supabase-js@2";
@@ -53,6 +53,31 @@ async function ownStaff(req: Request, staffId: string) {
   return biz ? st : null;
 }
 
+// Менеджер, если его бизнес принадлежит тому, кто делает запрос
+async function ownBusiness(req: Request): Promise<string | null> {
+  const uid = await userId(req);
+  if (!uid) return null;
+  const { data: biz } = await sb.from("businesses").select("id").eq("owner_id", uid).maybeSingle();
+  return biz?.id ?? null;
+}
+async function ownManager(req: Request, managerId: string) {
+  const bid = await ownBusiness(req);
+  if (!bid || !managerId) return null;
+  const { data: m } = await sb.from("managers").select("id, business_id, user_id, login, name").eq("id", managerId).eq("business_id", bid).maybeSingle();
+  return m ?? null;
+}
+const LOGIN_RE = /^[a-z0-9][a-z0-9._-]{2,39}$/;
+const LOGIN_MSG = "Логин — от 3 до 40 символов: латинские буквы, цифры, точка, дефис";
+const TAKEN_MSG = "Этот логин уже занят — придумайте другой";
+async function loginTaken(login: string, exceptManager?: string) {
+  const { data: a } = await sb.from("staff").select("id").eq("login", login).maybeSingle();
+  if (a) return true;
+  let q = sb.from("managers").select("id").eq("login", login);
+  if (exceptManager) q = q.neq("id", exceptManager);
+  const { data: b } = await q.maybeSingle();
+  return !!b;
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
   if (req.method !== "POST") return json({ ok: true, service: "kezek-account" });
@@ -95,12 +120,14 @@ Deno.serve(async (req) => {
       if (!/^[a-z0-9][a-z0-9._-]{2,39}$/.test(login)) {
         return json({ error: "Логин — от 3 до 40 символов: латинские буквы, цифры, точка, дефис" }, 400);
       }
-      const { data: taken } = await sb.from("staff").select("id").eq("login", login).neq("id", st.id).maybeSingle();
-      if (taken) return json({ error: "Этот логин уже занят — придумайте другой" }, 400);
+      if (await loginTaken(login)) {
+        const { data: own } = await sb.from("staff").select("id").eq("login", login).eq("id", st.id).maybeSingle();
+        if (!own) return json({ error: TAKEN_MSG }, 400);
+      }
       const password = tempPassword();
       if (st.user_id) {
         const { error } = await sb.auth.admin.updateUserById(st.user_id, { email: staffEmail(login), email_confirm: true, password });
-        if (error) return json({ error: /already|exists|registered/i.test(error.message) ? "Этот логин уже занят — придумайте другой" : error.message }, 400);
+        if (error) return json({ error: /already|exists|registered/i.test(error.message) ? TAKEN_MSG : error.message }, 400);
         const { error: ue } = await sb.from("staff").update({ login }).eq("id", st.id);
         if (ue) throw ue;
       } else {
@@ -108,7 +135,7 @@ Deno.serve(async (req) => {
           email: staffEmail(login), password, email_confirm: true, user_metadata: { staff: true },
         });
         if (error || !u?.user) {
-          return json({ error: /already|exists|registered/i.test(error?.message ?? "") ? "Этот логин уже занят — придумайте другой" : (error?.message ?? "Ошибка") }, 400);
+          return json({ error: /already|exists|registered/i.test(error?.message ?? "") ? TAKEN_MSG : (error?.message ?? "Ошибка") }, 400);
         }
         const { error: ue } = await sb.from("staff").update({ user_id: u.user.id, login }).eq("id", st.id);
         if (ue) {
@@ -140,6 +167,71 @@ Deno.serve(async (req) => {
       }
       const { error: ue } = await sb.from("staff").update({ user_id: null, login: null, tg_chat_id: null }).eq("id", st.id);
       if (ue) throw ue;
+      return json({ ok: true });
+    }
+
+    // Владелец заводит менеджера: имя + логин → в ответ пароль
+    if (body.action === "manager_create") {
+      const bid = await ownBusiness(req);
+      if (!bid) return json({ error: "Нет доступа" }, 403);
+      const name = String(body.name ?? "").trim();
+      const login = String(body.login ?? "").trim().toLowerCase();
+      if (name.length < 1 || name.length > 80) return json({ error: "Укажите имя менеджера" }, 400);
+      if (!LOGIN_RE.test(login)) return json({ error: LOGIN_MSG }, 400);
+      if (await loginTaken(login)) return json({ error: TAKEN_MSG }, 400);
+      const { count } = await sb.from("managers").select("id", { count: "exact", head: true }).eq("business_id", bid);
+      if ((count ?? 0) >= 3) return json({ error: "Можно добавить не больше трёх менеджеров" }, 400);
+      const password = tempPassword();
+      const { data: u, error } = await sb.auth.admin.createUser({
+        email: staffEmail(login), password, email_confirm: true, user_metadata: { manager: true },
+      });
+      if (error || !u?.user) {
+        return json({ error: /already|exists|registered/i.test(error?.message ?? "") ? TAKEN_MSG : (error?.message ?? "Ошибка") }, 400);
+      }
+      const { data: m, error: me } = await sb.from("managers")
+        .insert({ business_id: bid, user_id: u.user.id, login, name: name.slice(0, 80) }).select("id").single();
+      if (me) {
+        await sb.auth.admin.deleteUser(u.user.id);
+        return json({ error: me.message }, 400);
+      }
+      return json({ ok: true, id: m.id, login, password });
+    }
+
+    // Новый пароль менеджеру (и/или смена логина)
+    if (body.action === "manager_password_reset") {
+      const m = await ownManager(req, String(body.manager_id ?? ""));
+      if (!m) return json({ error: "Нет доступа" }, 403);
+      if (!m.user_id) return json({ error: "У менеджера нет входа" }, 400);
+      let login = m.login as string;
+      const wanted = String(body.login ?? "").trim().toLowerCase();
+      const password = tempPassword();
+      const patch: Record<string, unknown> = { password };
+      if (wanted && wanted !== m.login) {
+        if (!LOGIN_RE.test(wanted)) return json({ error: LOGIN_MSG }, 400);
+        if (await loginTaken(wanted, m.id)) return json({ error: TAKEN_MSG }, 400);
+        patch.email = staffEmail(wanted);
+        patch.email_confirm = true;
+        login = wanted;
+      }
+      const { error } = await sb.auth.admin.updateUserById(m.user_id, patch);
+      if (error) return json({ error: /already|exists|registered/i.test(error.message) ? TAKEN_MSG : error.message }, 400);
+      if (login !== m.login) {
+        const { error: ue } = await sb.from("managers").update({ login }).eq("id", m.id);
+        if (ue) throw ue;
+      }
+      return json({ ok: true, login, password });
+    }
+
+    // Удалить менеджера и закрыть вход
+    if (body.action === "manager_remove") {
+      const m = await ownManager(req, String(body.manager_id ?? ""));
+      if (!m) return json({ error: "Нет доступа" }, 403);
+      if (m.user_id) {
+        const { error } = await sb.auth.admin.deleteUser(m.user_id);
+        if (error && !/not found/i.test(error.message)) return json({ error: error.message }, 400);
+      }
+      const { error: de } = await sb.from("managers").delete().eq("id", m.id);
+      if (de) throw de;
       return json({ ok: true });
     }
 

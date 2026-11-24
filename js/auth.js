@@ -1,5 +1,5 @@
 // Экран входа/регистрации — общий для кабинета и админки
-import { sb, $, $$, esc, toast, toastErr, BRAND } from './lib.js?v=20261124a';
+import { sb, $, $$, esc, toast, toastErr, BRAND } from './lib.js?v=20261124b';
 
 export function renderAuth(root, { mode = 'login', onDone, allowSignup = true, title } = {}) {
   root.innerHTML = `<div class="auth-wrap"><div class="auth-card">
@@ -8,7 +8,7 @@ export function renderAuth(root, { mode = 'login', onDone, allowSignup = true, t
       ${allowSignup ? '<div class="seg"><button type="button" data-m="login">Вход</button><button type="button" data-m="signup">Регистрация</button></div>' : ''}
       <form id="af" class="stack" novalidate>
         <div><h2 id="at" style="margin-bottom:4px"></h2><p class="muted small" id="as" style="margin:0"></p></div>
-        <label class="field"><span>Email</span><input class="input" name="email" type="email" autocomplete="email" required></label>
+        <label class="field"><span id="el">Email</span><input class="input" name="email" type="text" inputmode="email" autocapitalize="off" autocomplete="username" required></label>
         <label class="field" id="pwf"><span>Пароль</span><input class="input" name="password" type="password" minlength="6" required></label>
         <label class="check small" id="agf"><input type="checkbox" name="agree"><span>Принимаю <a href="terms.html" target="_blank">условия оферты</a> и <a href="terms.html#privacy" target="_blank">политику конфиденциальности</a></span></label>
         <button class="btn btn-pri btn-block btn-lg" type="submit" id="ab"></button>
@@ -29,9 +29,10 @@ export function renderAuth(root, { mode = 'login', onDone, allowSignup = true, t
     $('#agf', root).classList.toggle('hide', m !== 'signup');
     f.password.autocomplete = m === 'signup' ? 'new-password' : 'current-password';
     const T = {
-      login: [title || 'Вход в кабинет', 'Введите email и пароль', 'Войти', 'Забыли пароль?'],
+      login: [title || 'Вход в кабинет', 'Введите email (или логин менеджера) и пароль', 'Войти', 'Забыли пароль?'],
       signup: ['Регистрация', 'Бесплатный пробный период, без карты', 'Создать аккаунт', 'Уже есть аккаунт? Войти'],
     }[m];
+    $('#el', root).textContent = m === 'login' ? 'Email или логин' : 'Email';
     $('#at', root).textContent = T[0];
     $('#as', root).textContent = T[1];
     $('#ab', root).textContent = T[2];
@@ -51,6 +52,8 @@ export function renderAuth(root, { mode = 'login', onDone, allowSignup = true, t
   };
   $('#backLogin', root).onclick = () => { $('#sent', root).classList.add('hide'); $('.seg', root)?.classList.remove('hide'); f.classList.remove('hide'); setMode('login'); };
   setMode(mode === 'signup' && allowSignup ? 'signup' : 'login');
+  const preLogin = new URLSearchParams(location.search).get('login');
+  if (preLogin && mode === 'login') f.email.value = preLogin.slice(0, 60);
 
   const sent = (text) => {
     f.classList.add('hide');
@@ -61,9 +64,11 @@ export function renderAuth(root, { mode = 'login', onDone, allowSignup = true, t
 
   f.onsubmit = async (e) => {
     e.preventDefault();
-    const email = f.email.value.trim().toLowerCase();
+    let email = f.email.value.trim().toLowerCase();
     const password = f.password.value;
-    if (!/^\S+@\S+\.\S+$/.test(email)) return toastErr('Проверьте email');
+    // Менеджер входит по логину — в системе это адрес login@staff.jazylam.kz
+    if (mode === 'login' && email && !email.includes('@')) email += '@staff.jazylam.kz';
+    if (!/^\S+@\S+\.\S+$/.test(email)) return toastErr(mode === 'login' ? 'Проверьте email или логин' : 'Проверьте email');
     if (password.length < 6) return toastErr('Пароль — минимум 6 символов');
     if (mode === 'signup' && !f.agree.checked) return toastErr('Нужно принять условия');
     const btn = $('#ab', root);
