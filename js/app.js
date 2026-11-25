@@ -3,17 +3,25 @@ import {
   normPhone, fmtPhone, phoneMask, waLink, telLink, zonedToUtc, dateStrInTz, timeStrInTz, minutesInTz,
   todayInTz, addDays, isoWeekday, WD_SHORT, WD_FULL, humanDate, humanDateTime, fmtDateShort, minsToHHMM,
   durText, plural, statusBadge, STATUS, slugify, pageUrl, BRAND, INITIAL_HASH, photoUrl, resizeImage, STAFF_AUTH_KEY,
-} from './lib.js?v=20261125a';
-import { renderAuth, renderNewPassword } from './auth.js?v=20261125a';
-import { downloadXlsx } from './xlsx.js?v=20261125a';
+} from './lib.js?v=20261125b';
+import { renderAuth, renderNewPassword } from './auth.js?v=20261125b';
+import { downloadXlsx } from './xlsx.js?v=20261125b';
 
 const root = $('#root');
 const S = {
   user: null, biz: null, settings: {}, plans: [], staff: [], services: [], links: [], hours: [],
-  day: null, view: store.get('kezek_view', 'grid'), dayBookings: [], role: 'owner', mgr: null,
+  day: null, view: store.get('kezek_view', 'list'), dayBookings: [], role: 'owner', mgr: null,
 };
-const TABS = [['journal', 'Журнал'], ['clients', 'Клиенты'], ['services', 'Услуги'], ['staff', 'Сотрудники'], ['cash', 'Касса'], ['acc', 'Бухгалтерия'], ['settings', 'Настройки'], ['ai', 'ИИ-ассистент'], ['billing', 'Подписка']];
-const MGR_TABS = [['journal', 'Журнал'], ['clients', 'Клиенты'], ['cash', 'Касса']];
+const TABS = [['journal', 'Главная'], ['acc', 'Бухгалтерия'], ['payroll', 'Зарплата'], ['ledger', 'Проводки'], ['clients', 'Клиенты'], ['services', 'Услуги'], ['staff', 'Сотрудники'], ['billing', 'Тарифы'], ['settings', 'Настройки'], ['ai', 'ИИ-ассистент']];
+const MGR_TABS = [['journal', 'Журнал записей'], ['clients', 'Клиенты'], ['services', 'Прайс услуг']];
+const THEMES = [['graphite', 'Светлая (Графит)', '#18181b'], ['emerald', 'Изумрудная', '#116d5b'], ['dark', 'Тёмная', '#0f1115']];
+function applyTheme(t) { document.documentElement.dataset.theme = t; store.set('jz_theme', t); }
+applyTheme(store.get('jz_theme', 'graphite'));
+function cycleTheme() {
+  const i = THEMES.findIndex(([k]) => k === document.documentElement.dataset.theme);
+  const n = THEMES[(i + 1) % THEMES.length];
+  applyTheme(n[0]); toast('Оформление: ' + n[1]);
+}
 const tabsNow = () => (S.role === 'manager' ? MGR_TABS : TABS);
 const CATS = ['Барбершоп', 'Салон красоты', 'Ногтевая студия', 'Брови и ресницы', 'Массаж', 'Косметология', 'Репетитор / курсы',
   'Автомойка / детейлинг', 'Фото / видео студия', 'Медицина / стоматология', 'Психолог / консультант', 'Фитнес / тренер', 'Другое'];
@@ -175,22 +183,27 @@ function renderShell() {
       <div class="container">
         <a class="logo" href="index.html"><i>J</i><span>${esc(BRAND)}</span></a>
         <span class="biz grow" id="bizName">${esc(S.biz.name)}${S.role === 'manager' ? ` · <span class="muted">менеджер ${esc(S.mgr.name)}</span>` : ''}</span>
-        <button class="btn btn-sm btn-pri" id="shareBtn" title="Ссылка для записи, QR-код, отправить клиентам">🔗 Ссылка и QR</button>
-        <button class="btn btn-sm btn-ghost" id="logout" title="Выйти">Выйти</button>
+        <button class="btn btn-sm" id="themeBtn" title="Оформление: светлая, изумрудная, тёмная">🌓</button>
+        <button class="btn btn-sm" id="shareBtn" title="Ссылка для записи, QR-код, отправить клиентам">🔗<span class="lbl-lg"> Ссылка и QR</span></button>
+        <button class="btn btn-sm btn-pri" id="walkBtn" title="Клиент без записи — сразу в кассу">+<span class="lbl-lg"> Без записи</span><span class="lbl-sm"> Касса</span></button>
+        <button class="btn btn-sm btn-ghost" id="logout" title="Выйти"><span class="lbl-lg">Выйти</span><span class="lbl-sm">⎋</span></button>
       </div>
       <div class="container"><nav class="tabs">${tabsNow().map(([k, t]) => `<a class="tab" href="#${k}" data-t="${k}">${t}</a>`).join('')}</nav></div>
     </header>
     <div class="container"><div id="banner" style="margin-top:14px"></div><main class="page" id="page"></main></div>`;
   $('#logout').onclick = () => sb.auth.signOut();
   $('#shareBtn').onclick = () => shareModal();
+  $('#themeBtn').onclick = () => cycleTheme();
+  $('#walkBtn').onclick = () => walkInModal();
 }
 
 function route() {
-  const t = location.hash.slice(1);
+  let t = location.hash.slice(1);
+  if (t === 'cash') t = S.role === 'manager' ? 'journal' : 'ledger';
   const tab = tabsNow().some(([k]) => k === t) ? t : 'journal';
   $$('.tab').forEach((a) => a.classList.toggle('active', a.dataset.t === tab));
   renderBanner();
-  const fn = { journal: renderJournal, clients: renderClients, services: renderServices, staff: renderStaff, cash: S.role === 'manager' ? renderMgrCash : renderCash, acc: renderAcc, ai: renderAi, settings: renderSettings, billing: renderBilling }[tab];
+  const fn = { journal: renderJournal, clients: renderClients, services: S.role === 'manager' ? renderPriceList : renderServices, staff: renderStaff, acc: renderAcc, payroll: renderPayroll, ledger: renderLedger, ai: renderAi, settings: renderSettings, billing: renderBilling }[tab];
   fn();
 }
 
@@ -285,9 +298,24 @@ function onbFlag(key) {
   store.set(k, { ...store.get(k, {}), [key]: true });
 }
 
+const JF = { staff: store.get('jz_jf_staff', ''), status: 'all' };
 function renderJournal() {
   if (!S.day) S.day = todayInTz(tz());
-  $('#page').innerHTML = `${S.role === 'manager' ? mgrBadge() : checklistHtml()}${shareBarHtml()}
+  const mgr = S.role === 'manager';
+  const stOpts = activeStaff().map((x) => `<option value="${x.id}" ${JF.staff === x.id ? 'selected' : ''}>${esc(x.name)}</option>`).join('');
+  $('#page').innerHTML = `${mgr ? mgrBadge() : checklistHtml()}
+    <div class="card" style="margin-bottom:12px">
+      <div class="row between" style="margin-bottom:10px"><b>Быстрый ввод</b>${mgr ? '<span class="muted small">запись, оплата, сверка смены</span>' : '<a href="#acc" class="small"><b>Бухгалтерия ›</b></a>'}</div>
+      <div class="quick-btns">
+        <button class="btn btn-pri" data-q="walk">+ Без записи</button>
+        <button class="btn" data-q="book">По записи</button>
+        <button class="btn" data-q="batch">Списком</button>
+        <button class="btn" data-q="exp">– Расход</button>
+        <button class="btn" data-q="shift">🔒 Закрыть смену</button>
+      </div></div>
+    <div class="grid grid-4 keep-2" id="cashKpi" style="margin-bottom:10px"></div>
+    <div class="card cash-extra small" id="cashExtra" style="margin-bottom:14px"><div class="spinner"></div></div>
+    ${mgr ? '' : shareBarHtml()}
     <div class="page-h">
       <div class="day-nav">
         <button class="btn btn-sm" id="prev" aria-label="Предыдущий день">‹</button>
@@ -296,21 +324,26 @@ function renderJournal() {
         <button class="btn btn-sm btn-ghost" id="today">Сегодня</button>
         <input type="date" class="input input-sm" id="dpick" style="width:auto">
       </div>
-      <div class="row">
-        <div class="seg" style="margin:0"><button data-v="grid">Сетка</button><button data-v="list">Список</button></div>
-        <button class="btn btn-pri" id="add">+ Запись</button>
-      </div>
+      <div class="seg" style="margin:0"><button data-v="list">Список</button><button data-v="grid">Сетка</button></div>
+    </div>
+    <div class="row filters">
+      <select class="select" id="mf"><option value="">Все мастера</option>${stOpts}</select>
+      <div class="chips">${[['all', 'Все'], ['booked', 'По записи'], ['paid', 'Оплачено'], ['noshow', 'Не пришёл']].map(([k, t]) => `<button class="chip ${JF.status === k ? 'on' : ''}" data-sf="${k}">${t}</button>`).join('')}</div>
     </div>
     <div class="grid grid-4 keep-2" id="kpi" style="margin-bottom:14px"></div>
     <div id="jr"><div class="spinner"></div></div>`;
   $('#hideOnb') && ($('#hideOnb').onclick = () => { onbFlag('hidden'); renderJournal(); });
   bindShareBar();
+  const Q = { walk: () => walkInModal(), book: () => bookingModal(null, { date: S.day, staff_id: JF.staff || undefined }), batch: () => batchModal(), exp: () => expenseModal('expense'), shift: () => shiftModal() };
+  $$('[data-q]').forEach((b) => { b.onclick = Q[b.dataset.q]; });
   $('#prev').onclick = () => { S.day = addDays(S.day, -1); drawDay(); };
   $('#next').onclick = () => { S.day = addDays(S.day, 1); drawDay(); };
   $('#today').onclick = () => { S.day = todayInTz(tz()); drawDay(); };
   $('#dpick').onchange = (e) => { if (e.target.value) { S.day = e.target.value; drawDay(); } };
   $$('[data-v]').forEach((b) => { b.onclick = () => { S.view = b.dataset.v; store.set('kezek_view', S.view); drawDay(); }; });
-  $('#add').onclick = () => bookingModal(null, { date: S.day });
+  $('#mf').onchange = (e) => { JF.staff = e.target.value; store.set('jz_jf_staff', JF.staff); drawDay(); };
+  $$('[data-sf]').forEach((b) => { b.onclick = () => { JF.status = b.dataset.sf; $$('[data-sf]').forEach((x) => x.classList.toggle('on', x === b)); drawDay(); }; });
+  drawCashKpi();
   drawDay();
 }
 
@@ -319,25 +352,45 @@ async function drawDay() {
   $('#dt').textContent = `${capital(WD_FULL[isoWeekday(day)])}, ${humanDate(day, false)}`;
   $('#dpick').value = day;
   $$('[data-v]').forEach((b) => b.classList.toggle('on', b.dataset.v === S.view));
-  const from = zonedToUtc(day, '00:00', tz()), to = zonedToUtc(addDays(day, 1), '00:00', tz());
-  const { data, error } = await sb.from('bookings').select('*').eq('business_id', S.biz.id)
-    .gte('starts_at', from.toISOString()).lt('starts_at', to.toISOString()).order('starts_at');
+  const from = zonedToUtc(day, '00:00', tz()).toISOString(), to = zonedToUtc(addDays(day, 1), '00:00', tz()).toISOString();
+  const [bq, eq] = await Promise.all([
+    sb.from('bookings').select('*').eq('business_id', S.biz.id).gte('starts_at', from).lt('starts_at', to).order('starts_at'),
+    sb.from('earnings').select('*').eq('business_id', S.biz.id).gte('occurred_at', from).lt('occurred_at', to).order('occurred_at'),
+  ]);
   if (S.day !== day || !$('#jr')) return;
-  if (error) { $('#jr').innerHTML = `<div class="alert alert-danger">${esc(errMsg(error))}</div>`; return; }
+  if (bq.error) { $('#jr').innerHTML = `<div class="alert alert-danger">${esc(errMsg(bq.error))}</div>`; return; }
+  const data = bq.data;
   S.dayBookings = data;
+  S.dayEarn = eq.data || [];
+  const ids = data.map((b) => b.id);
+  S.paid = new Map(S.dayEarn.filter((e) => e.booking_id).map((e) => [e.booking_id, e]));
+  // оплата по записи могла быть записана в другой день
+  const missing = ids.filter((id) => !S.paid.has(id));
+  if (missing.length && S.role !== 'manager') {
+    const { data: more } = await sb.from('earnings').select('*').in('booking_id', missing);
+    (more || []).forEach((e) => S.paid.set(e.booking_id, e));
+  }
+  if (S.day !== day || !$('#jr')) return;
   const act = data.filter((b) => b.status !== 'cancelled');
+  const walk = S.dayEarn.filter((e) => !e.booking_id);
   $('#kpi').innerHTML = [
     [act.length, plural(act.length, 'запись', 'записи', 'записей')],
-    [act.filter((b) => b.source === 'online').length, 'онлайн'],
-    [money(act.reduce((s, b) => s + (b.status !== 'no_show' ? b.price || 0 : 0), 0)) || '0 ₸', 'ожидаемая выручка'],
+    [walk.length, 'без записи'],
+    [money(act.reduce((a, b) => a + (b.status !== 'no_show' ? b.price || 0 : 0), 0)) || '0 ₸', 'ожидалось по записям'],
     [data.filter((b) => b.status === 'cancelled').length + ' / ' + act.filter((b) => b.status === 'no_show').length, 'отмен / неявок'],
   ].map(([v, l]) => `<div class="card stat flat"><div class="v">${v}</div><div class="l">${l}</div></div>`).join('');
-  if (S.view === 'list') drawList(data); else drawGrid(act, day);
+  const isPaid = (b) => S.paid.has(b.id) || b.status === 'done';
+  const okStaff = (id) => !JF.staff || id === JF.staff;
+  const okStatus = (b) => JF.status === 'all' || (JF.status === 'paid' && isPaid(b))
+    || (JF.status === 'booked' && ['booked', 'confirmed'].includes(b.status) && !isPaid(b)) || (JF.status === 'noshow' && b.status === 'no_show');
+  const items = data.filter((b) => okStaff(b.staff_id) && okStatus(b));
+  const walks = walk.filter((e) => okStaff(e.staff_id) && ['all', 'paid'].includes(JF.status));
+  if (S.view === 'grid') drawGrid(items.filter((b) => b.status !== 'cancelled'), day); else drawList(items, walks);
 }
 
 function drawGrid(items, day) {
   const box = $('#jr');
-  const staff = activeStaff();
+  const staff = activeStaff().filter((x) => !JF.staff || x.id === JF.staff);
   if (!staff.length) { box.innerHTML = '<div class="empty card">Добавьте сотрудника в разделе <a href="#staff">«Сотрудники»</a></div>'; return; }
   const wd = isoWeekday(day);
   const toMin = (t) => { const [h, m] = t.split(':').map(Number); return h * 60 + m; };
@@ -402,21 +455,72 @@ function drawGrid(items, day) {
   }
 }
 
-function drawList(items) {
+function drawList(items, walks = []) {
   const box = $('#jr');
-  if (!items.length) { box.innerHTML = '<div class="card empty"><div class="ico">🗓</div>На этот день записей нет</div>'; return; }
-  box.innerHTML = `<div class="card day-list">${items.map((b) => `
-    <div class="item ${b.status === 'cancelled' ? 'cancelled' : ''}" data-id="${b.id}" style="cursor:pointer">
-      <div class="t">${timeStrInTz(b.starts_at, tz())}</div>
-      <div class="grow"><div class="who"><b>${esc(b.client_name)}</b> <span class="muted small">${fmtPhone(b.client_phone)}</span></div>
-        <div class="muted small">${[b.service_name, b.staff_name, b.price != null ? money(b.price) : '', b.source === 'online' ? 'онлайн' : ''].filter(Boolean).map(esc).join(' · ')}</div>
-        ${b.comment ? `<div class="small">💬 ${esc(b.comment)}</div>` : ''}</div>
-      ${statusBadge(b.status)}
-      <a class="btn btn-sm btn-ghost" href="${telLink(b.client_phone)}" title="Позвонить" data-stop>📞</a>
-      <a class="btn btn-sm btn-ghost" target="_blank" rel="noopener" href="${esc(waLink(b.client_phone, reminderText(b)))}" title="Напомнить в WhatsApp" data-stop>💬</a>
-    </div>`).join('')}</div>`;
-  $$('[data-stop]', box).forEach((a) => a.addEventListener('click', (e) => e.stopPropagation()));
-  $$('.item', box).forEach((el) => { el.onclick = () => bookingModal(S.dayBookings.find((b) => b.id === el.dataset.id)); });
+  const rows = [...items.map((b) => ({ t: b.starts_at, b })), ...walks.map((e) => ({ t: e.occurred_at, e }))]
+    .sort((a, b) => new Date(a.t) - new Date(b.t));
+  if (!rows.length) {
+    box.innerHTML = `<div class="card empty"><div class="ico">🗓</div>${JF.status !== 'all' || JF.staff ? 'По выбранному фильтру записей нет' : 'На этот день записей нет'}
+      <div style="margin-top:10px"><button class="btn btn-pri btn-sm" id="emptyAdd">+ Записать клиента</button></div></div>`;
+    $('#emptyAdd').onclick = () => bookingModal(null, { date: S.day, staff_id: JF.staff || undefined });
+    return;
+  }
+  const owner = S.role !== 'manager';
+  box.innerHTML = `<div class="bk-list">${rows.map((r) => {
+    if (r.e) {
+      const e = r.e;
+      return `<div class="bk-card walk" data-e="${e.id}"><div class="bk-main">
+        <div class="grow" data-open><b>${timeStrInTz(e.occurred_at, tz())} · ${esc(e.client_name || 'Гость')} <span class="muted small">(без записи)</span></b>
+          <div class="muted small">${[e.staff_name, e.service_name, money(e.amount)].filter(Boolean).map(esc).join(' · ')}</div></div>
+        <span class="badge b-done">Оплачено · ${PAY[e.method] || e.method}</span>${owner ? '<button class="x" data-x="delE" title="Удалить оплату">✕</button>' : ''}</div></div>`;
+    }
+    const b = r.b, e = S.paid.get(b.id), paid = !!e || b.status === 'done', cancelled = b.status === 'cancelled';
+    const badge = paid ? `<span class="badge b-done">Оплачено${e ? ' · ' + (PAY[e.method] || '') : ''}</span>` : statusBadge(b.status);
+    const open = ['booked', 'confirmed'].includes(b.status) && !paid;
+    return `<div class="bk-card ${cancelled ? 'cancelled' : ''}" data-id="${b.id}"><div class="bk-main">
+        <div class="grow" data-open><b>${timeStrInTz(b.starts_at, tz())} · ${esc(b.client_name)}</b>
+          <div class="muted small">${[b.staff_name, b.service_name, b.price != null ? money(b.price) : '', b.source === 'online' ? 'онлайн' : ''].filter(Boolean).map(esc).join(' · ')}</div>
+          ${b.comment ? `<div class="small">💬 ${esc(b.comment)}</div>` : ''}</div>
+        ${badge}${cancelled || paid ? '' : '<button class="x" data-x="cancel" title="Отменить запись">✕</button>'}</div>
+      ${cancelled ? '' : `<div class="bk-act">
+        <a class="btn btn-sm" href="${telLink(b.client_phone)}">Позвонить</a>
+        <a class="btn btn-sm btn-wa" target="_blank" rel="noopener" href="${esc(waLink(b.client_phone, reminderText(b)))}">WhatsApp</a>
+        ${paid ? '' : '<button class="btn btn-sm" data-x="move">Перенести</button>'}
+        ${open ? '<button class="btn btn-sm" data-x="noshow">Не пришёл</button>' : ''}
+        ${paid ? '' : '<button class="btn btn-sm btn-pri" data-x="pay">Оплатил</button>'}</div>`}</div>`;
+  }).join('')}</div>`;
+  const setStatus = async (b, status, msg) => {
+    const { error } = await sb.from('bookings').update({ status }).eq('id', b.id);
+    if (error) return toastErr(error);
+    toast(msg); drawDay(); drawCashKpi();
+  };
+  $$('.bk-card[data-id]', box).forEach((el) => {
+    const b = S.dayBookings.find((x) => x.id === el.dataset.id);
+    $('[data-open]', el).onclick = () => bookingModal(b);
+    $$('[data-x]', el).forEach((btn) => {
+      btn.onclick = async () => {
+        const a = btn.dataset.x;
+        if (a === 'move') return bookingModal(b);
+        if (a === 'pay') return payModal(b);
+        if (a === 'noshow') return setStatus(b, 'no_show', 'Отмечено: не пришёл');
+        if (a === 'cancel') {
+          if (!(await confirmDlg(`Отменить запись ${b.client_name} на ${timeStrInTz(b.starts_at, tz())}? Если клиент подключил Telegram, он получит уведомление.`, 'Отменить запись', true))) return;
+          return setStatus(b, 'cancelled', 'Запись отменена');
+        }
+      };
+    });
+  });
+  $$('.bk-card[data-e]', box).forEach((el) => {
+    const e = S.dayEarn.find((x) => x.id === el.dataset.e);
+    if (owner) $('[data-open]', el).onclick = () => earningModal(e);
+    const del = $('[data-x=delE]', el);
+    if (del) del.onclick = async () => {
+      if (!(await confirmDlg(`Удалить оплату ${money(e.amount)}${e.client_name ? ' — ' + e.client_name : ''}?`, 'Удалить', true))) return;
+      const { error } = await sb.from('earnings').delete().eq('id', e.id);
+      if (error) return toastErr(error);
+      toast('Оплата удалена'); drawDay(); drawCashKpi();
+    };
+  });
 }
 
 function reminderText(b) {
@@ -458,11 +562,11 @@ function bookingModal(b, pre = {}) {
   </form>`;
   const footer = `${!isNew && b.status !== 'cancelled' ? '<button class="btn btn-danger" data-a="cancel">Отменить запись</button>' : ''}
     ${!isNew && b.status === 'cancelled' ? '<button class="btn" data-a="restore">Восстановить</button>' : ''}
-    ${S.role === 'manager' && !isNew && b.status !== 'cancelled' ? '<button class="btn" data-a="pay">💰 Принять оплату</button>' : ''}
+    ${!isNew && b.status !== 'cancelled' ? '<button class="btn" data-a="pay">💰 Оплатил</button>' : ''}
     <button class="btn" data-a="close">Закрыть</button><button class="btn btn-pri" data-a="save">${isNew ? 'Записать' : 'Сохранить'}</button>`;
   const m = modal({ title: isNew ? 'Новая запись' : 'Запись', body, footer });
   const payBtn = $('[data-a=pay]', m.el);
-  if (payBtn) payBtn.onclick = () => { m.close(); mgrPayModal({ booking: b }); };
+  if (payBtn) payBtn.onclick = () => { m.close(); payModal(b); };
   const f = $('#bf', m.el);
   f.phone.value = b ? fmtPhone(b.client_phone) : (pre.phone ? fmtPhone(pre.phone) : '');
   f.name.value = b ? b.client_name : (pre.name || '');
@@ -523,7 +627,7 @@ function bookingModal(b, pre = {}) {
 }
 
 function drawDayIfJournal() {
-  if ($('#jr')) drawDay();
+  if ($('#jr')) { drawDay(); drawCashKpi(); }
 }
 
 // ---------- Клиенты ----------
@@ -553,25 +657,31 @@ async function renderClients() {
     box.innerHTML = `<table class="table"><thead><tr><th>Клиент</th><th>Телефон</th><th>Визитов</th><th>Неявок</th><th>Последняя запись</th><th>Сумма</th></tr></thead>
       <tbody>${data.map((c) => `<tr class="clickable" data-id="${c.id}"><td><b>${esc(c.name)}</b>${c.tg ? ' <span title="Подключён Telegram">🔔</span>' : ''}${c.notes ? `<div class="muted small">${esc(c.notes.slice(0, 60))}</div>` : ''}</td>
         <td class="nowrap">${fmtPhone(c.phone)}</td><td>${c.visits}</td><td>${c.no_shows || ''}</td>
-        <td class="nowrap">${c.last_visit ? fmtDateShort(c.last_visit, tz()) : '—'}</td><td class="nowrap">${c.spent && S.role !== 'manager' ? money(c.spent) : ''}</td></tr>`).join('')}</tbody></table>`;
+        <td class="nowrap">${c.last_visit ? fmtDateShort(c.last_visit, tz()) : '—'}</td><td class="nowrap">${c.spent ? money(c.spent) : ''}</td></tr>`).join('')}</tbody></table>`;
     $$('tr[data-id]', box).forEach((tr) => { tr.onclick = () => clientModal(data.find((c) => c.id === tr.dataset.id), () => load($('#q').value)); });
   }
 }
 
 async function clientModal(c, onSaved) {
   const isNew = !c;
+  const mgr = S.role === 'manager';
   const body = document.createElement('div');
-  body.innerHTML = `<form id="cf" class="form-grid" novalidate>
+  body.innerHTML = `${!isNew ? `<div class="grid grid-2 keep-2" style="margin-bottom:12px">
+      <div class="card stat flat"><div class="v">${c.visits || 0}</div><div class="l">${plural(c.visits || 0, 'визит', 'визита', 'визитов')}${c.no_shows ? ` · неявок ${c.no_shows}` : ''}</div></div>
+      <div class="card stat flat"><div class="v">${money(c.spent || 0) || '0 ₸'}</div><div class="l">Оставил в кассе</div></div></div>
+      <div id="lastV" class="card flat" style="margin-bottom:12px;padding:12px"><div class="muted small">Последний визит</div><div class="spinner"></div></div>
+      <div class="row" style="margin-bottom:14px;flex-wrap:wrap;gap:8px"><button class="btn btn-pri" id="book">Записать по времени</button>
+        <button class="btn" id="again" disabled>Как в прошлый раз (в кассу)</button>
+        <a class="btn btn-sm" href="${telLink(c.phone)}">📞 Позвонить</a><a class="btn btn-sm btn-wa" target="_blank" rel="noopener" href="${esc(waLink(c.phone))}">WhatsApp</a></div>` : ''}
+    <form id="cf" class="form-grid" novalidate>
       <label class="field"><span>Имя</span><input class="input" name="name" required maxlength="80" value="${esc(c?.name || '')}"></label>
       <label class="field"><span>Телефон</span><input class="input" name="phone" type="tel" required></label>
-      <label class="field full"><span>Заметки</span><textarea class="textarea" name="notes" maxlength="2000" placeholder="Предпочтения, аллергии, любимый мастер…">${esc(c?.notes || '')}</textarea></label>
+      <label class="field full"><span>Заметка мастера</span><textarea class="textarea" name="notes" maxlength="2000" placeholder="Например: виски покороче, переход плавный">${esc(c?.notes || '')}</textarea></label>
     </form>
-    ${!isNew ? `<div class="row" style="margin:14px 0"><button class="btn btn-sm btn-pri" id="book">+ Записать</button>
-      <a class="btn btn-sm" href="${telLink(c.phone)}">📞 Позвонить</a><a class="btn btn-sm btn-wa" target="_blank" rel="noopener" href="${esc(waLink(c.phone))}">WhatsApp</a></div>
-      <h3>История</h3><div id="hist"><div class="spinner"></div></div>` : ''}`;
+    ${!isNew ? '<h3 style="margin-top:14px">История</h3><div id="hist"><div class="spinner"></div></div>' : ''}`;
   const m = modal({
     title: isNew ? 'Новый клиент' : c.name, body, wide: !isNew,
-    footer: `${!isNew ? '<button class="btn btn-danger" data-a="del">Удалить</button>' : ''}<button class="btn" data-a="close">Закрыть</button><button class="btn btn-pri" data-a="save">Сохранить</button>`,
+    footer: `${!isNew && !mgr ? '<button class="btn btn-danger" data-a="del">Удалить</button>' : ''}<button class="btn" data-a="close">Закрыть</button><button class="btn btn-pri" data-a="save">${isNew ? 'Добавить' : 'Сохранить'}</button>`,
   });
   const f = $('#cf', m.el);
   f.phone.value = c ? fmtPhone(c.phone) : '';
@@ -580,11 +690,22 @@ async function clientModal(c, onSaved) {
   if (!isNew) {
     $('#book', m.el).onclick = () => { m.close(); bookingModal(null, { phone: c.phone, name: c.name, date: S.day || todayInTz(tz()) }); };
     const { data } = await sb.from('bookings').select('*').eq('client_id', c.id).order('starts_at', { ascending: false }).limit(50);
+    const last = (data || []).find((b) => b.status === 'done') || (data || []).find((b) => b.status !== 'cancelled');
+    const lv = $('#lastV', m.el);
+    if (lv) lv.innerHTML = `<div class="muted small">Последний визит</div>${last
+      ? `<b>${esc([last.service_name || 'Без услуги', last.price != null ? money(last.price) : ''].filter(Boolean).join(' · '))}</b>
+         <div class="muted small">${fmtDateShort(last.starts_at, tz())}${last.staff_name ? ' · Мастер: ' + esc(last.staff_name) : ''}</div>` : '<span class="muted">ещё не было</span>'}`;
+    const again = $('#again', m.el);
+    if (again && last) {
+      again.disabled = false;
+      again.onclick = () => { m.close(); walkInModal({ staff_id: last.staff_id, service: last.service_name, amount: last.price, client: c.name, noLast: true }); };
+    }
     const h = $('#hist', m.el);
     if (h) h.innerHTML = !data?.length ? '<p class="muted">Записей нет</p>' : `<div class="day-list">${data.map((b) => `
       <div class="item"><div class="t" style="min-width:110px">${fmtDateShort(b.starts_at, tz())} ${timeStrInTz(b.starts_at, tz())}</div>
       <div class="grow small">${esc([b.service_name, b.staff_name, b.price != null ? money(b.price) : ''].filter(Boolean).join(' · '))}</div>${statusBadge(b.status)}</div>`).join('')}</div>`;
-    $('[data-a=del]', m.el).onclick = async () => {
+    const del = $('[data-a=del]', m.el);
+    if (del) del.onclick = async () => {
       if (!(await confirmDlg(`Удалить клиента «${c.name}»? Прошлые записи останутся в журнале.`, 'Удалить', true))) return;
       const { error } = await sb.from('clients').delete().eq('id', c.id);
       if (error) return toastErr(error);
@@ -614,8 +735,8 @@ function serviceStaffNames(s) {
 
 function renderServices() {
   const tpl = TEMPLATES[S.biz.category];
-  $('#page').innerHTML = `<div class="page-h"><h2>Услуги</h2><button class="btn btn-pri" id="add">+ Услуга</button></div>
-    <div id="list"></div>`;
+  $('#page').innerHTML = `<div class="page-h"><div><h2 style="margin:0">Услуги и фото</h2><p class="muted small" style="margin:2px 0 0">Фотографии услуг отображаются на странице онлайн-записи</p></div><button class="btn btn-pri" id="add">+ Услуга</button></div>
+    <div id="list" class="stack" style="gap:8px"></div>`;
   $('#add').onclick = () => serviceModal(null);
   const list = $('#list');
   if (!S.services.length) {
@@ -632,8 +753,9 @@ function renderServices() {
     return;
   }
   list.innerHTML = S.services.map((s) => `<div class="list-item ${s.is_active ? '' : 'inactive'}" data-id="${s.id}">
+      ${svcThumb(s)}
       <div class="grow"><b>${esc(s.name)}</b> ${s.is_active ? '' : '<span class="badge b-cancelled">скрыта</span>'}
-        <div class="muted small">${durText(s.duration_min)}${serviceStaffNames(s) ? ' · ' + esc(serviceStaffNames(s)) : ''}</div></div>
+        <div class="muted small">${durText(s.duration_min)} · ${s.photo_path ? 'с фото' : 'Без фото'}${serviceStaffNames(s) ? ' · ' + esc(serviceStaffNames(s)) : ''}</div></div>
       <b class="nowrap">${s.price != null ? money(s.price) : ''}</b><span class="muted">›</span></div>`).join('');
   $$('.list-item', list).forEach((el) => { el.onclick = () => serviceModal(S.services.find((s) => s.id === el.dataset.id)); });
 }
@@ -644,6 +766,12 @@ function serviceModal(s) {
   const linked = s ? S.links.filter((l) => l.service_id === s.id).map((l) => l.staff_id) : [];
   const checked = (id) => isNew || !linked.length || linked.includes(id);
   const body = `<form id="sf" class="form-grid" novalidate>
+      <div class="field full"><span>Фотография услуги (для витрины записи)</span>
+        <div class="svc-photo-box"><span id="svcPh">${svcThumb(s || {})}</span><div class="stack" style="gap:6px">
+          <input type="file" id="svcFile" accept="image/*" hidden>
+          <button type="button" class="btn btn-sm" id="svcUp">+ Загрузить фото услуги</button>
+          <button type="button" class="btn btn-sm btn-ghost ${s?.photo_path ? '' : 'hide'}" id="svcClr">Удалить фото</button>
+          <small class="muted">JPG или PNG с телефона или компьютера</small></div></div></div>
       <label class="field full"><span>Название</span><input class="input" name="name" required maxlength="80" value="${esc(s?.name || '')}" placeholder="Например: Мужская стрижка"></label>
       <label class="field"><span>Длительность, мин</span><input class="input" type="number" name="dur" min="5" max="720" step="5" value="${s?.duration_min || 60}" list="durs">
         <datalist id="durs">${[15, 30, 45, 60, 90, 120, 150, 180].map((d) => `<option value="${d}">`).join('')}</datalist></label>
@@ -658,6 +786,18 @@ function serviceModal(s) {
     footer: `${!isNew ? '<button class="btn btn-danger" data-a="del">Удалить</button>' : ''}<button class="btn" data-a="close">Отмена</button><button class="btn btn-pri" data-a="save">Сохранить</button>`,
   });
   const f = $('#sf', m.el);
+  let photoBlob = null, photoClear = false;
+  $('#svcUp', m.el).onclick = () => $('#svcFile', m.el).click();
+  $('#svcFile', m.el).onchange = async (ev) => {
+    const file = ev.target.files[0]; ev.target.value = '';
+    if (!file) return;
+    const sv = $('[data-a=save]', m.el); sv.disabled = true;
+    try { photoBlob = await resizeImage(file, 900); } catch (e) { return toastErr(e); } finally { sv.disabled = false; }
+    photoClear = false;
+    $('#svcPh', m.el).innerHTML = `<img class="svc-ph" src="${URL.createObjectURL(photoBlob)}" alt="">`;
+    $('#svcClr', m.el).classList.remove('hide');
+  };
+  $('#svcClr', m.el).onclick = () => { photoBlob = null; photoClear = true; $('#svcPh', m.el).innerHTML = svcThumb({}); $('#svcClr', m.el).classList.add('hide'); };
   $('[data-a=close]', m.el).onclick = m.close;
   if (!isNew) $('[data-a=del]', m.el).onclick = async () => {
     if (!(await confirmDlg(`Удалить услугу «${s.name}»? Прошлые записи сохранятся. Чтобы просто убрать с сайта — снимите галочку «Показывать».`, 'Удалить', true))) return;
@@ -680,6 +820,19 @@ function serviceModal(s) {
         ? await sb.from('services').insert({ ...payload, business_id: S.biz.id, sort: S.services.length }).select().single()
         : await sb.from('services').update(payload).eq('id', s.id).select().single();
       if (r.error) return toastErr(r.error);
+      const oldPath = s?.photo_path || null;
+      if (photoBlob) {
+        const path = `${S.biz.id}/svc-${crypto.randomUUID()}.jpg`;
+        const up = await sb.storage.from('photos').upload(path, photoBlob, { contentType: 'image/jpeg', cacheControl: '31536000' });
+        if (up.error) return toastErr(up.error);
+        const { error } = await sb.from('services').update({ photo_path: path }).eq('id', r.data.id);
+        if (error) { await sb.storage.from('photos').remove([path]); return toastErr(error); }
+        if (oldPath) sb.storage.from('photos').remove([oldPath]);
+      } else if (photoClear && oldPath) {
+        const { error } = await sb.from('services').update({ photo_path: null }).eq('id', r.data.id);
+        if (error) return toastErr(error);
+        sb.storage.from('photos').remove([oldPath]);
+      }
       if (staff.length > 1) {
         const ids = sel.length === staff.length ? [] : sel;
         const { error } = await sb.rpc('owner_set_service_staff', { p_service: r.data.id, p_staff: ids });
@@ -688,6 +841,20 @@ function serviceModal(s) {
       await loadRefs(); toast('Сохранено'); m.close(); renderServices();
     });
   };
+}
+
+function svcThumb(s) {
+  return s && s.photo_path ? `<img class="svc-ph" src="${esc(photoUrl(s.photo_path))}" alt="" loading="lazy">` : '<span class="svc-ph">Фото</span>';
+}
+
+// Прайс для менеджера — только просмотр
+function renderPriceList() {
+  const list = S.services.filter((s) => s.is_active);
+  $('#page').innerHTML = `${mgrBadge()}<div class="page-h"><h2>Прайс услуг</h2></div>
+    <div class="stack" style="gap:8px">${list.map((s) => `<div class="list-item" style="cursor:default">${svcThumb(s)}
+      <div class="grow"><b>${esc(s.name)}</b><div class="muted small">${durText(s.duration_min)}${s.description ? ' · ' + esc(s.description) : ''}</div></div>
+      <b class="nowrap">${s.price != null ? money(s.price) : ''}</b></div>`).join('') || '<div class="card empty">Услуг пока нет</div>'}</div>
+    <p class="muted small" style="margin-top:12px">Цены и фото меняет владелец.</p>`;
 }
 
 // ---------- Сотрудники ----------
@@ -717,7 +884,7 @@ function renderStaff() {
     <div class="alert ${n >= limit ? 'alert-warn' : 'alert-info'}" style="margin-bottom:12px">Работают ${n} из ${limit} по тарифу «${esc(p.title)}».${n >= limit && bigger ? ` Нужно больше — тариф <a href="#billing">«${esc(bigger.title)}»</a> (до ${bigger.staff_limit}).` : ''}</div>
     <div id="list">${S.staff.map((s) => `<div class="list-item ${s.is_active ? '' : 'inactive'}" data-id="${s.id}">
       <span class="avatar">${esc(s.name[0]?.toUpperCase() || '?')}</span>
-      <div class="grow"><b>${esc(s.name)}</b>${s.title ? ` <span class="muted">· ${esc(s.title)}</span>` : ''}${s.share_pct ? ` <span class="muted small">· доля ${s.share_pct}%</span>` : ''} ${s.is_active ? '' : '<span class="badge b-cancelled">не работает</span>'}
+      <div class="grow"><b>${esc(s.name)}</b>${s.title ? ` <span class="muted">· ${esc(s.title)}</span>` : ''}${s.share_pct ? ` <span class="muted">(${s.share_pct}%)</span>` : ''} ${s.is_active ? '' : '<span class="badge b-cancelled">не работает</span>'}
         <div class="muted small">${esc(scheduleText(s.id))}</div>
         <div class="small" style="margin-top:2px">${s.user_id ? `🔑 вход: <b>${esc(s.login)}</b>${s.tg_chat_id ? ' · ✈️ Telegram подключён' : ' · Telegram не подключён'}` : '<span class="muted">🔒 нет входа — откройте, чтобы выдать логин и пароль</span>'}</div></div><span class="muted">›</span></div>`).join('') || '<div class="card empty">Сотрудников пока нет</div>'}</div>
     <div class="page-h" style="margin-top:22px"><h3 style="margin:0">Менеджеры</h3><button class="btn btn-sm btn-pri" id="addMgr">+ Менеджер</button></div>
@@ -821,7 +988,7 @@ function staffModal(s) {
         <label class="field"><span>Имя</span><input class="input" name="name" required maxlength="60" value="${esc(s?.name || '')}"></label>
         <label class="field"><span>Должность <span class="muted">(необязательно)</span></span><input class="input" name="title" maxlength="60" value="${esc(s?.title || '')}" placeholder="Барбер, мастер маникюра…"></label>
       </div>
-      <label class="field"><span>Доля мастера от выручки, % <span class="muted">(для расчёта зарплаты в «Бухгалтерии»)</span></span><input class="input" name="share" type="number" min="0" max="100" step="1" inputmode="numeric" value="${s?.share_pct ?? 0}" style="max-width:140px"></label>
+      <label class="field"><span>Ставка мастера (% от выручки) <span class="muted">— для раздела «Зарплата»</span></span><input class="input" name="share" type="number" min="0" max="100" step="1" inputmode="numeric" value="${s?.share_pct ?? 0}" style="max-width:140px"></label>
       <label class="check"><input type="checkbox" name="active" ${!s || s.is_active ? 'checked' : ''}><span>Работает и принимает записи</span></label>
       <div><h3 style="margin:8px 0 4px">График работы</h3>${rows.join('')}
         <button type="button" class="btn btn-sm btn-ghost" id="copyMon">Скопировать понедельник на все рабочие дни</button></div>
@@ -883,14 +1050,14 @@ function staffModal(s) {
       const { error } = await sb.rpc('owner_set_hours', { p_staff: r.data.id, p_hours: hours });
       if (error) return toastErr(error);
       onbFlag('hours');
-      await loadRefs(); toast('Сохранено'); m.close(); renderStaff();
+      await loadRefs(); toast('Сохранено'); m.close(); route();
     });
   };
 }
 
 // ---------- Касса: заработок сотрудников и выгрузка в Excel ----------
 const PAY = { cash: 'Наличные', kaspi: 'Kaspi', card: 'Карта' };
-const cashState = { preset: 'week', from: null, to: null, staff: '' };
+const cashState = { preset: 'month', from: null, to: null, staff: '' };
 
 function cashRange() {
   const today = todayInTz(tz());
@@ -922,89 +1089,6 @@ async function fetchEarnings(fromDay, toDay) {
   return out;
 }
 
-async function renderCash() {
-  const [from, to, label] = cashRange();
-  const presets = [['today', 'Сегодня'], ['yesterday', 'Вчера'], ['week', 'Неделя'], ['lastweek', 'Прошлая неделя'], ['month', 'Месяц'], ['lastmonth', 'Прошлый месяц'], ['custom', 'Свой период']];
-  $('#page').innerHTML = `<div class="page-h"><h2>Касса</h2>
-      <span class="row" style="gap:8px;flex-wrap:wrap"><button class="btn btn-sm" id="addE">+ Добавить оплату</button><button class="btn btn-sm btn-pri" id="xl">⬇️ Скачать Excel</button></span></div>
-    <div class="row" style="gap:6px;flex-wrap:wrap;margin-bottom:10px">${presets.map(([k, t]) => `<button class="chip ${cashState.preset === k ? 'on' : ''}" data-p="${k}">${t}</button>`).join('')}</div>
-    <div class="row ${cashState.preset === 'custom' ? '' : 'hide'}" id="cust" style="gap:8px;flex-wrap:wrap;margin-bottom:10px;align-items:center">
-      <input class="input input-sm" type="date" id="cf" value="${from}"> — <input class="input input-sm" type="date" id="ct" value="${to}"></div>
-    <div class="row" style="gap:8px;align-items:center;margin-bottom:12px"><span class="muted small">${esc(label)}: ${esc(humanDate(from, false))} — ${esc(humanDate(to, false))}</span>
-      <select class="select" id="fs" style="max-width:220px;margin-left:auto"><option value="">Все сотрудники</option>${S.staff.map((x) => `<option value="${x.id}" ${cashState.staff === x.id ? 'selected' : ''}>${esc(x.name)}</option>`).join('')}</select></div>
-    <div id="cashBody"><div class="spinner"></div></div>`;
-  $$('[data-p]').forEach((b) => { b.onclick = () => { cashState.preset = b.dataset.p; renderCash(); }; });
-  if (cashState.preset === 'custom') {
-    $('#cf').onchange = $('#ct').onchange = () => { cashState.from = $('#cf').value; cashState.to = $('#ct').value; if (cashState.from && cashState.to && cashState.from <= cashState.to) renderCash(); else toastErr('Проверьте даты'); };
-  }
-  $('#fs').onchange = (e) => { cashState.staff = e.target.value; renderCash(); };
-
-  let rows;
-  try { rows = await fetchEarnings(from, to); } catch (e) { $('#cashBody').innerHTML = `<div class="empty">Не удалось загрузить: ${esc(errMsg(e))}</div>`; return; }
-  if (cashState.staff) rows = rows.filter((r) => r.staff_id === cashState.staff);
-  drawCash(rows, from, to, label);
-}
-
-function drawCash(rows, from, to, label) {
-  const total = rows.reduce((a, r) => a + r.amount, 0);
-  const byMethod = (m) => rows.filter((r) => r.method === m).reduce((a, r) => a + r.amount, 0);
-  const staffMap = new Map();
-  for (const r of rows) {
-    const k = r.staff_id || ('x:' + (r.staff_name || '—'));
-    const o = staffMap.get(k) || { name: r.staff_name || 'Без сотрудника', n: 0, sum: 0, cash: 0, kaspi: 0, card: 0 };
-    o.n++; o.sum += r.amount; o[r.method] += r.amount;
-    staffMap.set(k, o);
-  }
-  const staffRows = [...staffMap.values()].sort((a, b) => b.sum - a.sum);
-  const box = $('#cashBody');
-  if (!rows.length) { box.innerHTML = '<div class="card empty"><div class="ico">💰</div>За этот период оплат нет.<br><span class="muted small">Сотрудники отмечают оплату кнопкой «Оплатил» в своём кабинете. Вы можете добавить оплату сами.</span></div>'; $('#xl').onclick = () => toastErr('Нечего выгружать — за период нет оплат'); $('#addE').onclick = () => earningModal(null); return; }
-  box.innerHTML = `<div class="grid grid-4 keep-2" style="margin-bottom:14px">
-      <div class="stat card"><div class="v">${money(total)}</div><div class="l">Выручка · ${rows.length} ${plural(rows.length, 'клиент', 'клиента', 'клиентов')}</div></div>
-      <div class="stat card"><div class="v">${money(Math.round(total / rows.length))}</div><div class="l">Средний чек</div></div>
-      <div class="stat card"><div class="v">${money(byMethod('cash'))}</div><div class="l">💵 Наличные</div></div>
-      <div class="stat card"><div class="v">${money(byMethod('kaspi') + byMethod('card'))}</div><div class="l">📱 Kaspi и 💳 карта</div></div></div>
-    <h3 style="margin:6px 0">По сотрудникам</h3>
-    <div class="table-wrap card" style="margin-bottom:16px"><table class="table"><thead><tr><th>Сотрудник</th><th>Клиентов</th><th>Наличные</th><th>Kaspi</th><th>Карта</th><th>Итого</th></tr></thead><tbody>
-      ${staffRows.map((o) => `<tr><td><b>${esc(o.name)}</b></td><td>${o.n}</td><td>${money(o.cash)}</td><td>${money(o.kaspi)}</td><td>${money(o.card)}</td><td><b>${money(o.sum)}</b></td></tr>`).join('')}
-      </tbody></table></div>
-    <h3 style="margin:6px 0">Все оплаты</h3>
-    <div class="card day-list">${rows.map((r) => `<div class="item" data-id="${r.id}" style="cursor:pointer">
-      <div class="t" style="min-width:78px">${esc(humanDate(dateStrInTz(r.occurred_at, tz()), false))}<div class="muted small" style="font-weight:400">${timeStrInTz(r.occurred_at, tz())}</div></div>
-      <div class="grow"><b>${esc(r.client_name || 'Клиент без имени')}</b> <span class="muted small">${esc(r.staff_name || '')}</span>
-        <div class="muted small">${[r.service_name, PAY[r.method], r.price_expected != null && r.price_expected !== r.amount ? 'по записи ' + money(r.price_expected) : '', r.note, r.created_by === 'owner' ? 'добавлено владельцем' : r.created_by === 'manager' ? 'принял менеджер' : ''].filter(Boolean).map(esc).join(' · ')}</div></div>
-      <b>${money(r.amount)}</b></div>`).join('')}</div>`;
-  $$('.item', box).forEach((el) => { el.onclick = () => earningModal(rows.find((r) => r.id === el.dataset.id)); });
-  $('#addE').onclick = () => earningModal(null);
-  $('#xl').onclick = () => exportCash(rows, from, to, label, staffRows);
-}
-
-function exportCash(rows, from, to, label, staffRows) {
-  const H = (v) => ({ v, head: true });
-  const total = rows.reduce((a, r) => a + r.amount, 0);
-  const sorted = [...rows].sort((a, b) => new Date(a.occurred_at) - new Date(b.occurred_at));
-  const detail = [['Дата', 'Время', 'Сотрудник', 'Клиент', 'Услуга', 'Способ оплаты', 'Сумма', 'Цена по записи', 'Комментарий'].map(H),
-    ...sorted.map((r) => [{ v: dateStrInTz(r.occurred_at, tz()), t: 'date' }, timeStrInTz(r.occurred_at, tz()), r.staff_name || '', r.client_name || '', r.service_name || '',
-      PAY[r.method] || r.method, { v: r.amount, t: 'money' }, r.price_expected != null ? { v: r.price_expected, t: 'money' } : '',
-      [r.note, r.created_by === 'owner' ? 'добавил владелец' : r.created_by === 'manager' ? 'принял менеджер' : ''].filter(Boolean).join('; ')])];
-  const n = detail.length - 1;
-  detail.push([{ v: 'ИТОГО', bold: true }, '', '', '', '', '', { v: total, t: 'money', bold: true }]);
-  const bySt = [['Сотрудник', 'Клиентов', 'Наличные', 'Kaspi', 'Карта', 'Итого', 'Средний чек'].map(H),
-    ...staffRows.map((o) => [o.name, { v: o.n, t: 'num' }, { v: o.cash, t: 'money' }, { v: o.kaspi, t: 'money' }, { v: o.card, t: 'money' }, { v: o.sum, t: 'money', bold: true }, { v: Math.round(o.sum / o.n), t: 'money' }])];
-  const sum = (k) => staffRows.reduce((a, o) => a + o[k], 0);
-  bySt.push([{ v: 'ИТОГО', bold: true }, { v: rows.length, t: 'num', bold: true }, { v: sum('cash'), t: 'money', bold: true }, { v: sum('kaspi'), t: 'money', bold: true }, { v: sum('card'), t: 'money', bold: true }, { v: total, t: 'money', bold: true }, { v: Math.round(total / rows.length), t: 'money', bold: true }]);
-  const days = new Map();
-  for (const r of rows) { const d = dateStrInTz(r.occurred_at, tz()); const o = days.get(d) || { n: 0, sum: 0 }; o.n++; o.sum += r.amount; days.set(d, o); }
-  const byDay = [['Дата', 'Клиентов', 'Выручка'].map(H),
-    ...[...days.entries()].sort().map(([d, o]) => [{ v: d, t: 'date' }, { v: o.n, t: 'num' }, { v: o.sum, t: 'money' }])];
-  const biz = S.biz.name.replace(/[^\p{L}\p{N}]+/gu, '_').replace(/^_+|_+$/g, '').slice(0, 30) || 'kassa';
-  downloadXlsx(`${biz}_касса_${from}_${to}.xlsx`, [
-    { name: 'Оплаты', widths: [12, 8, 20, 22, 22, 15, 14, 15, 30], rows: detail, filterTo: n + 1 },
-    { name: 'По сотрудникам', widths: [26, 11, 14, 14, 14, 15, 14], rows: bySt, filterTo: bySt.length - 1 },
-    { name: 'По дням', widths: [14, 11, 15], rows: byDay },
-  ]);
-  toast('Excel-файл скачан');
-}
-
 // Добавить оплату за сотрудника или исправить/удалить любую
 function earningModal(e) {
   const isNew = !e;
@@ -1029,7 +1113,7 @@ function earningModal(e) {
     if (!(await confirmDlg(`Удалить оплату ${money(e.amount)}?`, 'Удалить', true))) return;
     const { error } = await sb.from('earnings').delete().eq('id', e.id);
     if (error) return toastErr(error);
-    toast('Удалено'); m.close(); renderCash();
+    toast('Удалено'); m.close(); route();
   };
   $('[data-a=save]', m.el).onclick = (ev) => busy(ev.target, async () => {
     const f = $('#ef', m.el);
@@ -1046,7 +1130,7 @@ function earningModal(e) {
       ? await sb.from('earnings').insert({ ...payload, business_id: S.biz.id, created_by: 'owner' })
       : await sb.from('earnings').update(payload).eq('id', e.id);
     if (error) return toastErr(error);
-    toast('Сохранено'); m.close(); renderCash();
+    toast('Сохранено'); m.close(); route();
   });
 }
 
@@ -1181,6 +1265,8 @@ function renderSettings() {
   const b = S.biz, url = bookUrl(), bot = S.settings.bot_username;
   const shareText = `Записаться онлайн в «${b.name}»: ${url}`;
   $('#page').innerHTML = `<div class="page-h"><h2>Настройки</h2></div>
+    <div class="card"><h3>Оформление интерфейса</h3><div class="theme-pick">${THEMES.map(([k, t, c]) => `<button class="chip ${document.documentElement.dataset.theme === k ? 'on' : ''}" data-th="${k}"><i style="background:${c}"></i>${t}</button>`).join('')}</div>
+      <p class="muted small" style="margin:8px 0 0">Сохраняется на этом устройстве. Кнопка ◐ вверху тоже переключает тему.</p></div>
     <div class="card"><h3>Ссылка для онлайн-записи</h3>
       <div class="qr-box"><img id="qr" alt="QR-код"><div class="grow stack">
         <div class="link-box"><input class="input grow" readonly value="${esc(url)}" id="url"><button class="btn btn-pri" id="copy">Скопировать</button></div>
@@ -1206,6 +1292,7 @@ function renderSettings() {
         <label class="field"><span>Шаг времени записи</span><select class="select" name="slot_step">${[10, 15, 20, 30, 45, 60, 90, 120].map((v) => `<option value="${v}" ${v === b.slot_step ? 'selected' : ''}>каждые ${v} мин</option>`).join('')}</select></label>
         <label class="field"><span>Записываться не позже чем за</span><select class="select" name="min_notice_min">${[[0, 'в любой момент'], [30, '30 минут'], [60, '1 час'], [120, '2 часа'], [180, '3 часа'], [360, '6 часов'], [720, '12 часов'], [1440, 'сутки']].map(([v, t]) => `<option value="${v}" ${v === b.min_notice_min ? 'selected' : ''}>${t}</option>`).join('')}</select></label>
         <label class="field"><span>Открыта запись на</span><select class="select" name="max_days_ahead">${[7, 14, 30, 60, 90].map((v) => `<option value="${v}" ${v === b.max_days_ahead ? 'selected' : ''}>${v} дней вперёд</option>`).join('')}</select></label>
+        <label class="field"><span>Ставка налога, %</span><input class="input" name="tax_rate" type="number" min="0" max="30" step="0.5" value="${Number(b.tax_rate ?? 4)}"><small>Для расчёта налога в «Бухгалтерии». Упрощёнка — обычно 4%; уточните у бухгалтера.</small></label>
         <div class="field"><span>Напоминания клиентам в Telegram</span>
           <label class="check"><input type="checkbox" name="remind_24h" ${b.remind_24h ? 'checked' : ''}><span>за сутки</span></label>
           <label class="check"><input type="checkbox" name="remind_2h" ${b.remind_2h ? 'checked' : ''}><span>за 2 часа</span></label></div>
@@ -1223,6 +1310,7 @@ function renderSettings() {
     <div class="card"><h3>Аккаунт</h3><p class="muted">Вход: ${esc(S.user.email)}</p>
       <div class="row"><button class="btn" id="pw">Сменить пароль</button><button class="btn btn-ghost" id="lo2">Выйти</button></div></div>`;
 
+  $$('[data-th]').forEach((x) => { x.onclick = () => { applyTheme(x.dataset.th); $$('[data-th]').forEach((y) => y.classList.toggle('on', y === x)); }; });
   const qr = qrDataUrl(url);
   $('#qr').src = qr; $('#qrdl').href = qr;
   $('#copy').onclick = () => { copyText(url); onbFlag('shared'); };
@@ -1256,7 +1344,9 @@ function renderSettings() {
       description: f.description.value.trim() || null, slug, timezone: f.timezone.value, slot_step: +f.slot_step.value,
       min_notice_min: +f.min_notice_min.value, max_days_ahead: +f.max_days_ahead.value,
       remind_24h: f.remind_24h.checked, remind_2h: f.remind_2h.checked,
+      tax_rate: Math.round(Number(f.tax_rate.value) * 10) / 10,
     };
+    if (!(patch.tax_rate >= 0 && patch.tax_rate <= 30)) return toastErr('Ставка налога — от 0 до 30%');
     if (patch.name.length < 2) return toastErr('Укажите название');
     if (!/^[a-z0-9][a-z0-9-]{2,39}$/.test(slug)) return toastErr('Адрес страницы: латиница, цифры, дефис, 3–40 символов');
     await busy($('button[type=submit]', f), async () => {
@@ -1692,19 +1782,19 @@ async function renderBilling() {
 }
 
 // =====================================================================
-//  Бухгалтерия владельца и касса менеджера
+//  Касса, быстрый ввод и финансы (по макету v11)
 // =====================================================================
-function mgrBadge() {
-  return `<div class="muted small" style="margin:4px 0 10px">👤 Вы вошли как менеджер: <b>${esc(S.mgr?.name || '')}</b></div>`;
-}
 const sum = (rows, f = (r) => r.amount) => rows.reduce((a, r) => a + (f(r) || 0), 0);
 const hhmm = (iso) => timeStrInTz(iso, tz());
-
+const m0 = (v) => money(v) || '0 ₸';
+function mgrBadge() {
+  return `<div class="muted small" style="margin:0 0 10px">👤 Вы вошли как менеджер: <b>${esc(S.mgr?.name || '')}</b></div>`;
+}
 async function fetchExpenses(fromDay, toDay) {
   const a = zonedToUtc(fromDay, '00:00', tz()).toISOString();
   const b = zonedToUtc(addDays(toDay, 1), '00:00', tz()).toISOString();
   const { data, error } = await sb.from('expenses').select('*').eq('business_id', S.biz.id)
-    .gte('occurred_at', a).lt('occurred_at', b).order('occurred_at', { ascending: false }).limit(1000);
+    .gte('occurred_at', a).lt('occurred_at', b).order('occurred_at', { ascending: false }).limit(2000);
   if (error) throw error;
   return data;
 }
@@ -1716,197 +1806,475 @@ async function fetchClosings(fromDay, toDay) {
   if (error) throw error;
   return data;
 }
+const shareOf = (e) => {
+  const st = S.staff.find((x) => x.id === e.staff_id);
+  return Math.round(e.amount * ((st && st.share_pct) || 0) / 100);
+};
+const taxRate = () => Number(S.biz.tax_rate ?? 4);
 
-// ---------- Бухгалтерия (только владелец) ----------
-async function renderAcc() {
+// Чипы выбора: <div data-chips="name">…<button data-v="…">
+function chipsHtml(name, items, cur) {
+  return `<div class="chips" data-chips="${name}">${items.map(([v, t]) => `<button type="button" class="chip ${String(v) === String(cur) ? 'on' : ''}" data-v="${esc(String(v))}">${t}</button>`).join('')}</div>`;
+}
+function bindChips(root, name, onPick) {
+  const box = $(`[data-chips="${name}"]`, root);
+  if (!box) return;
+  $$('[data-v]', box).forEach((b) => {
+    b.onclick = () => { $$('[data-v]', box).forEach((x) => x.classList.toggle('on', x === b)); onPick(b.dataset.v, b); };
+  });
+}
+const setChip = (root, name, v) => $$(`[data-chips="${name}"] [data-v]`, root).forEach((x) => x.classList.toggle('on', x.dataset.v === String(v)));
+const PAY_ITEMS = () => [['kaspi', 'Kaspi'], ['cash', 'Наличные'], ['card', 'Карта']];
+
+// Записать оплату: владелец — напрямую, менеджер — через защищённую функцию
+async function savePayment(p) {
+  if (S.role === 'manager') {
+    const { error } = await sb.rpc('manager_add_earning', {
+      p_amount: p.amount, p_method: p.method, p_staff: p.booking ? null : (p.staff_id || null), p_booking: p.booking?.id || null,
+      p_client: p.booking ? null : (p.client || null), p_service: p.booking ? null : (p.service || null), p_note: p.note || null,
+    });
+    return error;
+  }
+  if (p.booking) {
+    const b = p.booking;
+    const { data: ex } = await sb.from('earnings').select('id').eq('booking_id', b.id).maybeSingle();
+    const row = { amount: p.amount, method: p.method, note: p.note || null };
+    const r = ex ? await sb.from('earnings').update(row).eq('id', ex.id)
+      : await sb.from('earnings').insert({ ...row, business_id: S.biz.id, staff_id: b.staff_id, booking_id: b.id, price_expected: b.price,
+        client_name: b.client_name, service_name: b.service_name, occurred_at: new Date().toISOString(), created_by: 'owner' });
+    if (r.error) return r.error;
+    if (['booked', 'confirmed', 'no_show'].includes(b.status)) {
+      const u = await sb.from('bookings').update({ status: 'done' }).eq('id', b.id);
+      if (u.error) return u.error;
+    }
+    return null;
+  }
+  const { error } = await sb.from('earnings').insert({ business_id: S.biz.id, staff_id: p.staff_id || null, amount: p.amount, method: p.method,
+    client_name: p.client || null, service_name: p.service || null, note: p.note || null, occurred_at: new Date().toISOString(), created_by: 'owner' });
+  return error;
+}
+function afterMoney() { if ($('#jr')) { drawDay(); drawCashKpi(); } else route(); }
+
+// «Оплатил» по записи
+function payModal(b) {
+  let method = 'kaspi';
+  const m = modal({
+    title: 'Принять оплату',
+    body: `<form id="pf2" class="stack" novalidate>
+      <div><b>${esc(b.client_name)}</b> <span class="muted small">${timeStrInTz(b.starts_at, tz())}</span>
+        <div class="muted small">${[b.staff_name, b.service_name].filter(Boolean).map(esc).join(' · ')}</div></div>
+      <label class="field"><span>Сумма, ₸</span><input class="input input-lg" name="amount" type="number" inputmode="numeric" min="1" value="${b.price ?? ''}" placeholder="Сумма"></label>
+      <div class="field"><span>Способ оплаты</span>${chipsHtml('pay', PAY_ITEMS(), method)}</div></form>`,
+    footer: '<button class="btn" data-a="close">Отмена</button><button class="btn btn-pri" data-a="save">Оплачено</button>',
+  });
+  bindChips(m.el, 'pay', (v) => { method = v; });
+  $('[data-a=close]', m.el).onclick = m.close;
+  setTimeout(() => $('#pf2 [name=amount]', m.el)?.focus(), 50);
+  $('[data-a=save]', m.el).onclick = (e) => busy(e.target, async () => {
+    const amount = Math.round(Number($('#pf2', m.el).amount.value));
+    if (!amount || amount < 1) return toastErr('Введите сумму');
+    const err = await savePayment({ booking: b, amount, method });
+    if (err) return toastErr(err);
+    toast(`Оплачено: ${money(amount)}`); m.close(); afterMoney();
+  });
+}
+
+// «+ Без записи»: клиент пришёл с улицы — сразу в кассу
+async function walkInModal(pre = {}) {
+  const staff = activeStaff();
+  const svcs = S.services.filter((x) => x.is_active);
+  let st = pre.staff_id && staff.some((x) => x.id === pre.staff_id) ? pre.staff_id : (staff.length === 1 ? staff[0].id : '');
+  let svc = pre.service || '', method = pre.method || 'kaspi';
+  const m = modal({
+    title: 'Клиент без записи',
+    body: `<form id="wf" class="stack" novalidate>
+      <div id="wiLast"></div>
+      ${staff.length ? `<div class="field"><span>Мастер</span>${chipsHtml('st', staff.map((x) => [x.id, esc(x.name)]), st)}</div>` : ''}
+      ${svcs.length ? `<div class="field"><span>Услуга</span>${chipsHtml('svc', svcs.map((x) => [x.name, `${esc(x.name)}${x.price != null ? ' · ' + money(x.price) : ''}`]), svc)}</div>` : ''}
+      <div class="form-grid">
+        <label class="field"><span>Сумма, ₸</span><input class="input input-lg" name="amount" type="number" inputmode="numeric" min="1" value="${pre.amount ?? ''}"></label>
+        <label class="field"><span>Имя <span class="muted">(необязательно)</span></span><input class="input" name="client" maxlength="80" value="${esc(pre.client || '')}" placeholder="Гость"></label>
+      </div>
+      <div class="field"><span>Способ оплаты</span>${chipsHtml('pay', PAY_ITEMS(), method)}</div></form>`,
+    footer: '<button class="btn" data-a="close">Отмена</button><button class="btn btn-pri" data-a="save">Записать оплату</button>',
+  });
+  const f = $('#wf', m.el);
+  bindChips(m.el, 'st', (v) => { st = v; });
+  bindChips(m.el, 'svc', (v) => { svc = v; const x = svcs.find((y) => y.name === v); if (x && x.price != null) f.amount.value = x.price; });
+  bindChips(m.el, 'pay', (v) => { method = v; });
+  $('[data-a=close]', m.el).onclick = m.close;
+  $('[data-a=save]', m.el).onclick = (e) => busy(e.target, async () => {
+    const amount = Math.round(Number(f.amount.value));
+    if (!amount || amount < 1) return toastErr('Введите сумму');
+    if (staff.length > 1 && !st) return toastErr('Выберите мастера');
+    const err = await savePayment({ amount, method, staff_id: st || null, client: f.client.value.trim() || null, service: svc || null });
+    if (err) return toastErr(err);
+    toast(`Оплата записана: ${money(amount)}`); m.close(); afterMoney();
+  });
+  if (pre.noLast) return;
+  const { data } = await sb.from('earnings').select('*').eq('business_id', S.biz.id).order('occurred_at', { ascending: false }).limit(1);
+  const last = data && data[0];
+  const box = $('#wiLast', m.el);
+  if (!last || !box) return;
+  box.innerHTML = `<div class="card flat pay-row" style="padding:10px 12px"><div><div class="muted small">Как в прошлый раз</div>
+      <b>${esc([last.staff_name, last.service_name, money(last.amount)].filter(Boolean).join(' · '))}</b> <span class="muted small">(${PAY[last.method] || ''})</span></div>
+      <button type="button" class="btn btn-sm" id="wiRep">Повторить</button></div>`;
+  $('#wiRep', m.el).onclick = () => {
+    if (last.staff_id && staff.some((x) => x.id === last.staff_id)) { st = last.staff_id; setChip(m.el, 'st', st); }
+    if (last.service_name) { svc = last.service_name; setChip(m.el, 'svc', svc); }
+    method = last.method; setChip(m.el, 'pay', method);
+    f.amount.value = last.amount;
+  };
+}
+
+// «Списком»: перенести записи из тетради
+function batchModal() {
+  const svcs = S.services.filter((x) => x.is_active);
+  const m = modal({
+    title: 'Добавить записи списком', wide: true,
+    body: `<div class="stack">
+      <p class="muted small" style="margin:0">Одна строка — одна запись на <b>${esc(humanDate(S.day, false))}</b>: <b>время, имя, мастер, телефон</b>. Телефон можно не писать, если клиент уже есть в базе.</p>
+      <textarea class="textarea" id="bt" rows="7" placeholder="16:00 Арман ${esc(activeStaff()[0]?.name || 'Ерлан')} 87011234567&#10;17:30 Бекзат ${esc(activeStaff()[1]?.name || activeStaff()[0]?.name || 'Азамат')}"></textarea>
+      ${svcs.length ? `<label class="field"><span>Услуга для всех записей</span><select class="select" id="bs"><option value="">— без услуги —</option>${svcs.map((x, i) => `<option value="${x.id}" ${i === 0 ? 'selected' : ''}>${esc(x.name)}${x.price != null ? ' · ' + money(x.price) : ''}</option>`).join('')}</select></label>` : ''}
+      <div id="bres"></div></div>`,
+    footer: '<button class="btn" data-a="close">Отмена</button><button class="btn btn-pri" data-a="save">Добавить все</button>',
+  });
+  $('[data-a=close]', m.el).onclick = m.close;
+  $('[data-a=save]', m.el).onclick = (e) => busy(e.target, async () => {
+    const lines = $('#bt', m.el).value.split('\n').map((x) => x.trim()).filter(Boolean);
+    if (!lines.length) return toastErr('Впишите хотя бы одну строку');
+    const svc = svcs.find((x) => x.id === ($('#bs', m.el)?.value || '')) || null;
+    const staff = activeStaff();
+    let ok = 0; const errs = [];
+    for (const line of lines) {
+      try {
+        const tm = line.match(/^(\d{1,2})[:.](\d{2})\s+(.+)$/);
+        if (!tm) throw new Error('нет времени в начале (например 16:00)');
+        const time = `${tm[1].padStart(2, '0')}:${tm[2]}`;
+        let rest = tm[3];
+        const ph = rest.match(/(\+?\d[\d\s()-]{8,}\d)/);
+        let phone = ph ? normPhone(ph[1]) : null;
+        if (ph) rest = rest.replace(ph[1], ' ');
+        const words = rest.split(/\s+/).filter(Boolean);
+        let master = null;
+        for (let i = words.length - 1; i >= 0 && !master; i--) {
+          const w = words[i].toLowerCase();
+          const hit = staff.find((x) => x.name.toLowerCase() === w || x.name.toLowerCase().split(/\s+/)[0] === w);
+          if (hit) { master = hit; words.splice(i, 1); }
+        }
+        if (!master && staff.length === 1) master = staff[0];
+        if (!master) throw new Error('не нашёл мастера');
+        const name = words.join(' ').trim();
+        if (!name) throw new Error('нет имени клиента');
+        if (!phone) {
+          const { data } = await sb.from('clients').select('phone').eq('business_id', S.biz.id).ilike('name', name).limit(2);
+          if (data && data.length === 1) phone = data[0].phone;
+          else throw new Error(data && data.length > 1 ? 'несколько клиентов с таким именем — укажите телефон' : 'нет телефона, и клиента нет в базе');
+        }
+        const starts = zonedToUtc(S.day, time, tz());
+        const dur = svc?.duration_min || 60;
+        const { error } = await sb.from('bookings').insert({ business_id: S.biz.id, staff_id: master.id, service_id: svc?.id || null,
+          client_name: name, client_phone: phone, starts_at: starts.toISOString(), ends_at: new Date(starts.getTime() + dur * 60000).toISOString(), price: svc?.price ?? null });
+        if (error) throw error;
+        ok++;
+      } catch (err) { errs.push(`<li><b>${esc(line)}</b> — ${esc(errMsg(err))}</li>`); }
+    }
+    if (ok) { toast(`Добавлено записей: ${ok} из ${lines.length}`); drawDayIfJournal(); }
+    if (!errs.length) return m.close();
+    $('#bres', m.el).innerHTML = `<div class="alert alert-warn">Не добавлены (исправьте и нажмите ещё раз):<ul style="margin:6px 0 0;padding-left:18px">${errs.join('')}</ul></div>`;
+    $('#bt', m.el).value = lines.filter((l) => errs.some((x) => x.includes(esc(l)))).join('\n');
+  });
+}
+
+// Расход или налог
+function expenseModal(kind = 'expense') {
+  const mgr = S.role === 'manager';
+  if (mgr) kind = 'expense';
+  const m = modal({
+    title: mgr ? 'Расход из кассы' : 'Добавить расход или налог',
+    body: `<form id="xf" class="stack" novalidate>
+      ${mgr ? '' : `<div class="field"><span>Категория</span>${chipsHtml('kind', [['expense', 'Расходы'], ['tax', 'Налог']], kind)}</div>`}
+      <label class="field"><span>Комментарий</span><input class="input" name="title" maxlength="120" value="${kind === 'tax' ? `Налог (ИП ${taxRate()}%)` : ''}" placeholder="Расходники, аренда, реклама…"></label>
+      <div class="form-grid">
+        <label class="field"><span>Сумма, ₸</span><input class="input input-lg" name="amount" type="number" inputmode="numeric" min="1"></label>
+        ${mgr ? '' : `<label class="field"><span>Дата</span><input class="input" name="day" type="date" value="${todayInTz(tz())}"></label>`}
+      </div></form>`,
+    footer: '<button class="btn" data-a="close">Отмена</button><button class="btn btn-pri" data-a="save">Сохранить</button>',
+  });
+  const f = $('#xf', m.el);
+  bindChips(m.el, 'kind', (v) => {
+    kind = v;
+    if (v === 'tax' && !f.title.value.trim()) f.title.value = `Налог (ИП ${taxRate()}%)`;
+    if (v === 'expense' && /^Налог/.test(f.title.value)) f.title.value = '';
+  });
+  $('[data-a=close]', m.el).onclick = m.close;
+  setTimeout(() => (f.title.value ? f.amount : f.title).focus(), 50);
+  $('[data-a=save]', m.el).onclick = (e) => busy(e.target, async () => {
+    const title = f.title.value.trim(), amount = Math.round(Number(f.amount.value));
+    if (!title) return toastErr('Напишите, на что расход');
+    if (!amount || amount < 1) return toastErr('Введите сумму');
+    let error;
+    if (mgr) ({ error } = await sb.rpc('manager_add_expense', { p_title: title, p_amount: amount }));
+    else {
+      const day = f.day.value || todayInTz(tz());
+      const at = day === todayInTz(tz()) ? new Date() : zonedToUtc(day, '12:00', tz());
+      ({ error } = await sb.from('expenses').insert({ business_id: S.biz.id, kind, title, amount, occurred_at: at.toISOString(), created_by: 'owner' }));
+    }
+    if (error) return toastErr(error);
+    toast(kind === 'tax' ? 'Налог записан' : 'Расход записан'); m.close(); afterMoney();
+  });
+}
+
+// Закрытие (сверка) смены
+async function shiftModal() {
+  const day = todayInTz(tz());
+  let earn, exp;
+  try { [earn, exp] = await Promise.all([fetchEarnings(day, day), fetchExpenses(day, day)]); } catch (e) { return toastErr(e); }
+  const owner = S.role !== 'manager';
+  const costs = sum(exp.filter((x) => x.kind === 'expense'));
+  const total = sum(earn), cash = sum(earn.filter((r) => r.method === 'cash'));
+  const share = owner ? sum(earn, shareOf) : 0;
+  const m = modal({
+    title: 'Закрытие смены',
+    body: `<div class="stack" style="gap:0">
+      <div class="kv"><span>Выручка за смену (сегодня)</span><b>${m0(total)}</b></div>
+      <div class="kv"><span>Наличные / Kaspi и карта</span><b>${m0(cash)} / ${m0(total - cash)}</b></div>
+      <div class="kv"><span>Расходы из кассы</span><b>– ${m0(costs)}</b></div>
+      ${owner ? `<div class="kv"><span>Доля мастеров за смену</span><b>– ${m0(share)}</b></div>` : ''}
+      <div class="kv"><span><b>Наличных должно быть в кассе</b></span><b style="font-size:18px">${m0(cash - costs)}</b></div>
+      <label class="field" style="margin-top:12px"><span>Комментарий <span class="muted">(необязательно)</span></span><input class="input" id="shN" maxlength="300" placeholder="Например: размен 5 000 ₸ оставил в кассе"></label>
+      <p class="muted small" style="margin:8px 0 0">${earn.length} ${plural(earn.length, 'оплата', 'оплаты', 'оплат')} за сегодня. ${owner ? '' : 'Владелец получит итог в Telegram.'}</p></div>`,
+    footer: '<button class="btn" data-a="close">Отмена</button><button class="btn btn-pri" data-a="save">Зафиксировать смену</button>',
+  });
+  $('[data-a=close]', m.el).onclick = m.close;
+  $('[data-a=save]', m.el).onclick = (e) => busy(e.target, async () => {
+    const { data, error } = await sb.rpc('close_shift', { p_note: $('#shN', m.el).value.trim() || null });
+    if (error) return toastErr(error);
+    toast(`Смена закрыта: ${m0(data.gross)}`); m.close(); afterMoney();
+  });
+}
+
+// Касса на главной
+async function drawCashKpi() {
+  const kpi = $('#cashKpi'), ex = $('#cashExtra');
+  if (!kpi) return;
+  const today = todayInTz(tz());
+  const card = (v, l, sub) => `<div class="card stat"><div class="l">${l}</div><div class="v">${v}</div><div class="l">${sub}</div></div>`;
+  const visits = (n) => `${n} ${plural(n, 'визит', 'визита', 'визитов')}`;
+  try {
+    if (S.role === 'manager') {
+      const [earn, exp, cl] = await Promise.all([fetchEarnings(today, today), fetchExpenses(today, today), fetchClosings(today, today)]);
+      if (!$('#cashKpi')) return;
+      const t = sum(earn), cash = sum(earn.filter((r) => r.method === 'cash')), costs = sum(exp);
+      kpi.innerHTML = card(m0(t), 'Касса сегодня', visits(earn.length)) + card(m0(cash), '💵 Наличные', 'за смену')
+        + card(m0(t - cash), '📱 Kaspi и карта', 'за смену') + card(m0(cash - costs), 'В кассе', `расходы ${m0(costs)}`);
+      ex.innerHTML = `<div>Режим менеджера: запись клиентов, приём оплат и сверка смены.</div>
+        ${cl.length ? `<div>🔒 Смена закрыта в ${hhmm(cl[0].created_at)} на ${m0(cl[0].gross)}. Новые оплаты можно добавлять и закрыть смену ещё раз.</div>` : ''}`;
+      return;
+    }
+    const mon = addDays(today, -(isoWeekday(today) - 1)), ms = today.slice(0, 8) + '01', yd = addDays(today, -1);
+    const from = [mon, ms, yd].sort()[0];
+    const [earn, exp] = await Promise.all([fetchEarnings(from, today), fetchExpenses(today, today)]);
+    if (!$('#cashKpi')) return;
+    const d = (r) => dateStrInTz(r.occurred_at, tz());
+    const pick = (a, b) => earn.filter((r) => d(r) >= a && d(r) <= b);
+    const T = pick(today, today), Y = pick(yd, yd), W = pick(mon, today), M = pick(ms, today);
+    kpi.innerHTML = card(m0(sum(T)), 'Касса сегодня', visits(T.length)) + card(m0(sum(Y)), 'Вчера', visits(Y.length))
+      + card(m0(sum(W)), 'За неделю', visits(W.length)) + card(m0(sum(M)), 'За месяц', visits(M.length));
+    const costs = sum(exp.filter((x) => x.kind === 'expense'));
+    const net = sum(T) - costs - sum(T, shareOf) - Math.round(sum(T) * taxRate() / 100);
+    const cashT = sum(T.filter((r) => r.method === 'cash'));
+    ex.innerHTML = `<div class="row"><span>Чистыми владельцу за сегодня:</span><b>${m0(net)}</b></div>
+      <div class="row"><span>Без записи / По записи (мес.):</span><b>${m0(sum(M.filter((r) => !r.booking_id)))} / ${m0(sum(M.filter((r) => r.booking_id)))}</b></div>
+      <div class="row"><span>Наличные / Kaspi и карта за смену:</span><b>${m0(cashT)} / ${m0(sum(T) - cashT)}</b></div>`;
+  } catch (e) { ex.innerHTML = `<span class="muted">Касса не загрузилась: ${esc(errMsg(e))}</span>`; }
+}
+
+// ---------- Финансы владельца: общий выбор периода ----------
+function periodBar(rerender) {
   const [from, to, label] = cashRange();
-  const presets = [['today', 'Сегодня'], ['yesterday', 'Вчера'], ['week', 'Неделя'], ['lastweek', 'Прошлая неделя'], ['month', 'Месяц'], ['lastmonth', 'Прошлый месяц'], ['custom', 'Свой период']];
-  $('#page').innerHTML = `<div class="page-h"><h2>Бухгалтерия</h2>
-      <span class="row" style="gap:8px;flex-wrap:wrap"><button class="btn btn-sm" id="addX">+ Расход</button><button class="btn btn-sm" id="addT">+ Налоговый платёж</button></span></div>
-    <div class="row" style="gap:6px;flex-wrap:wrap;margin-bottom:10px">${presets.map(([k, t]) => `<button class="chip ${cashState.preset === k ? 'on' : ''}" data-p="${k}">${t}</button>`).join('')}</div>
+  const presets = [['month', 'Этот месяц'], ['today', 'Сегодня'], ['yesterday', 'Вчера'], ['week', 'Неделя'], ['lastmonth', 'Прошлый месяц'], ['custom', 'Свой период']];
+  const html = `<div class="chips" style="margin-bottom:10px">${presets.map(([k, t]) => `<button class="chip ${cashState.preset === k ? 'on' : ''}" data-p="${k}">${t}</button>`).join('')}</div>
     <div class="row ${cashState.preset === 'custom' ? '' : 'hide'}" style="gap:8px;flex-wrap:wrap;margin-bottom:10px;align-items:center">
       <input class="input input-sm" type="date" id="cf" value="${from}"> — <input class="input input-sm" type="date" id="ct" value="${to}"></div>
-    <div class="muted small" style="margin-bottom:12px">${esc(label)}: ${esc(humanDate(from, false))} — ${esc(humanDate(to, false))}</div>
-    <div id="accBody"><div class="spinner"></div></div>`;
-  $$('[data-p]').forEach((b) => { b.onclick = () => { cashState.preset = b.dataset.p; renderAcc(); }; });
-  if (cashState.preset === 'custom') {
-    $('#cf').onchange = $('#ct').onchange = () => { cashState.from = $('#cf').value; cashState.to = $('#ct').value; if (cashState.from && cashState.to && cashState.from <= cashState.to) renderAcc(); else toastErr('Проверьте даты'); };
+    <div class="muted small" style="margin-bottom:12px">Период: <b>${esc(label)}</b> · ${esc(humanDate(from, false))} — ${esc(humanDate(to, false))}</div>`;
+  const bind = () => {
+    $$('[data-p]').forEach((b) => { b.onclick = () => { cashState.preset = b.dataset.p; rerender(); }; });
+    if (cashState.preset === 'custom') {
+      $('#cf').onchange = $('#ct').onchange = () => { cashState.from = $('#cf').value; cashState.to = $('#ct').value; if (cashState.from && cashState.to && cashState.from <= cashState.to) rerender(); else toastErr('Проверьте даты'); };
+    }
+  };
+  return { html, bind, from, to, label };
+}
+function payrollRows(earn) {
+  const map = new Map();
+  for (const e of earn) {
+    const k = e.staff_id || 'none';
+    const o = map.get(k) || { st: S.staff.find((x) => x.id === e.staff_id) || null, name: e.staff_name || 'Без мастера', rev: 0, n: 0, pay: 0 };
+    o.rev += e.amount; o.n++; o.pay += shareOf(e); map.set(k, o);
   }
-  $('#addX').onclick = () => expenseModal('expense');
-  $('#addT').onclick = () => expenseModal('tax');
+  for (const st of S.staff) if (st.is_active && !map.has(st.id)) map.set(st.id, { st, name: st.name, rev: 0, n: 0, pay: 0 });
+  return [...map.values()].sort((a, b) => b.rev - a.rev);
+}
 
+// ---------- Бухгалтерия ----------
+async function renderAcc() {
+  const pb = periodBar(renderAcc);
+  $('#page').innerHTML = `<div class="page-h"><div><h2 style="margin:0">Бухгалтерский учёт</h2></div>
+      <span class="row" style="gap:8px;flex-wrap:wrap"><button class="btn btn-sm" id="addX">– Расход / Налог</button><button class="btn btn-sm" id="shiftB">Сверка смены</button><button class="btn btn-sm btn-pri" id="xl">⬇️ Скачать Excel</button></span></div>
+    ${pb.html}<div id="accBody"><div class="spinner"></div></div>`;
+  pb.bind();
+  $('#addX').onclick = () => expenseModal('expense');
+  $('#shiftB').onclick = () => shiftModal();
   let earn, exp, closings;
-  try { [earn, exp, closings] = await Promise.all([fetchEarnings(from, to), fetchExpenses(from, to), fetchClosings(from, to)]); }
+  try { [earn, exp, closings] = await Promise.all([fetchEarnings(pb.from, pb.to), fetchExpenses(pb.from, pb.to), fetchClosings(pb.from, pb.to)]); }
   catch (e) { $('#accBody').innerHTML = `<div class="empty">Не удалось загрузить: ${esc(errMsg(e))}</div>`; return; }
   if (!$('#accBody')) return;
-
-  const rate = Number(S.biz.tax_rate ?? 4);
-  const revenue = sum(earn);
-  const costs = sum(exp.filter((x) => x.kind === 'expense'));
-  const taxPaid = sum(exp.filter((x) => x.kind === 'tax'));
-  const taxDue = Math.round(revenue * rate / 100);
-  const salary = S.staff.map((st) => {
-    const r = sum(earn.filter((e) => e.staff_id === st.id));
-    return { st, rev: r, pct: st.share_pct || 0, pay: Math.round(r * (st.share_pct || 0) / 100) };
-  }).filter((x) => x.rev > 0 || x.pct > 0);
-  const salaryTotal = sum(salary, (x) => x.pay);
-  const profit = revenue - costs - salaryTotal - taxDue;
-
+  $('#xl').onclick = () => exportAcc(earn, exp, pb);
+  const rate = taxRate(), rev = sum(earn);
+  const costs = sum(exp.filter((x) => x.kind === 'expense')), taxPaid = sum(exp.filter((x) => x.kind === 'tax'));
+  const tax = Math.round(rev * rate / 100), preFot = rev - costs - tax, payroll = sum(earn, shareOf), net = preFot - payroll;
+  const cash = sum(earn.filter((r) => r.method === 'cash'));
+  const walkIn = sum(earn.filter((r) => !r.booking_id));
+  const pct = (v) => (rev > 0 ? Math.max(0, v) / rev * 100 : 0);
   $('#accBody').innerHTML = `<div class="grid grid-4 keep-2" style="margin-bottom:14px">
-      <div class="stat card"><div class="v">${money(revenue) || '0 ₸'}</div><div class="l">Выручка · ${earn.length} ${plural(earn.length, 'оплата', 'оплаты', 'оплат')}</div></div>
-      <div class="stat card"><div class="v">${money(costs) || '0 ₸'}</div><div class="l">Расходы</div></div>
-      <div class="stat card"><div class="v">${money(salaryTotal) || '0 ₸'}</div><div class="l">Зарплата мастерам</div></div>
-      <div class="stat card"><div class="v">${money(taxDue) || '0 ₸'}</div><div class="l">Налог ${rate}% · уплачено ${money(taxPaid) || '0 ₸'}</div></div></div>
-    <div class="card stat" style="margin-bottom:14px"><div class="v" style="color:${profit < 0 ? 'var(--danger, #b91c1c)' : 'inherit'}">${money(profit) || '0 ₸'}</div>
-      <div class="l">Чистая прибыль = выручка − расходы − зарплата − налог (оценка)</div></div>
-    <div class="card" style="margin-bottom:14px"><h3 style="margin:0 0 8px">Ставка налога</h3>
-      <div class="row" style="gap:8px;align-items:center;flex-wrap:wrap"><input class="input" id="taxr" type="number" min="0" max="30" step="0.5" value="${rate}" style="max-width:110px"> <span>% от выручки</span>
-        <button class="btn btn-sm btn-pri" id="taxs">Сохранить</button></div>
-      <p class="muted small" style="margin:8px 0 0">Налог считается от выручки за период — это ориентир для вас, не расчёт для налоговой. Ставку и порядок уплаты уточните у бухгалтера.</p></div>
-    <h3 style="margin:6px 0">Зарплата мастерам</h3>
-    <div class="table-wrap card" style="margin-bottom:16px">${salary.length ? `<table class="table"><thead><tr><th>Мастер</th><th>Выручка</th><th>Доля</th><th>К выплате</th></tr></thead><tbody>
-      ${salary.map((x) => `<tr><td><b>${esc(x.st.name)}</b></td><td>${money(x.rev) || '0 ₸'}</td><td>${x.pct ? x.pct + '%' : '<span class="muted" title="Укажите долю в карточке сотрудника">не задана</span>'}</td><td><b>${money(x.pay) || '0 ₸'}</b></td></tr>`).join('')}
-      <tr><td><b>Итого</b></td><td>${money(sum(salary, (x) => x.rev)) || '0 ₸'}</td><td></td><td><b>${money(salaryTotal) || '0 ₸'}</b></td></tr></tbody></table>`
-      : '<div class="empty small">Нет данных. Укажите долю мастера в карточке сотрудника.</div>'}</div>
-    <h3 style="margin:6px 0">Расходы и налоговые платежи</h3>
-    <div class="card day-list" style="margin-bottom:16px">${exp.length ? exp.map((x) => `<div class="item" data-id="${x.id}" style="cursor:pointer">
-      <div class="t" style="min-width:78px">${esc(humanDate(dateStrInTz(x.occurred_at, tz()), false))}<div class="muted small" style="font-weight:400">${hhmm(x.occurred_at)}</div></div>
-      <div class="grow"><b>${esc(x.title)}</b><div class="muted small">${x.kind === 'tax' ? '🏛 налоговый платёж' : '➖ расход'}${x.created_by === 'manager' ? ' · внёс менеджер' : ''}</div></div>
-      <b>${money(x.amount)}</b></div>`).join('') : '<div class="empty small">За период расходов нет</div>'}</div>
-    <h3 style="margin:6px 0">Закрытые смены</h3>
+      <div class="stat card"><div class="v">${m0(rev)}</div><div class="l">Валовая выручка · ${earn.length} ${plural(earn.length, 'оплата', 'оплаты', 'оплат')}</div></div>
+      <div class="stat card"><div class="v">${m0(costs)}</div><div class="l">Расходы</div></div>
+      <div class="stat card"><div class="v">${m0(tax)}</div><div class="l">Налог (${rate}%)</div></div>
+      <div class="stat card"><div class="v" style="color:${preFot < 0 ? 'var(--danger)' : 'inherit'}">${m0(preFot)}</div><div class="l">Чистая прибыль (до ФОТ)</div></div></div>
+    <div class="grid grid-2" style="margin-bottom:14px">
+      <div class="card"><div class="row between"><h3 style="margin:0">Структура оборота</h3><span class="muted small">Ставка налога: ${rate}% · <a href="#settings">изменить</a></span></div>
+        <div class="struct-bar"><i style="width:${pct(preFot)}%;background:var(--ok)"></i><i style="width:${pct(costs)}%;background:var(--accent)"></i><i style="width:${pct(tax)}%;background:var(--danger)"></i></div>
+        <div class="legend"><span style="--c:var(--ok)">Прибыль до ФОТ — <b>${m0(preFot)}</b></span><span style="--c:var(--accent)">Расходы — <b>${m0(costs)}</b></span>
+          <span style="--c:var(--danger)">Налог ИП — <b>${m0(tax)}</b>${taxPaid ? ` <span class="muted small">(уплачено ${m0(taxPaid)})</span>` : ''}</span></div></div>
+      <div class="card"><h3>Сверка счетов и остаток</h3>
+        <div class="kv"><span>Безналичный расчёт (Kaspi / Карта)</span><b>${m0(rev - cash)}</b></div>
+        <div class="kv"><span>Наличные в кассе</span><b>${m0(cash)}</b></div>
+        <div class="kv"><span>Выручка без записи / по записи</span><b>${m0(walkIn)} / ${m0(rev - walkIn)}</b></div>
+        <div class="kv"><span>Зарплата мастеров (ФОТ)</span><b>– ${m0(payroll)}</b></div>
+        <div class="kv"><span><b>Чистый остаток владельцу</b><br><span class="muted small">после ФОТ и налога</span></span><b style="font-size:18px;color:${net < 0 ? 'var(--danger)' : 'inherit'}">${m0(net)}</b></div></div></div>
+    <p class="muted small">Налог считается от выручки по ставке из настроек — это ориентир, а не расчёт для налоговой. Уточните у бухгалтера.</p>
+    <h3 style="margin:14px 0 6px">Закрытые смены</h3>
     <div class="card day-list">${closings.length ? closings.map((c) => `<div class="item">
       <div class="t" style="min-width:78px">${esc(humanDate(dateStrInTz(c.created_at, tz()), false))}<div class="muted small" style="font-weight:400">${hhmm(c.created_at)}</div></div>
       <div class="grow"><b>${esc(c.closed_by_name || (c.closed_by === 'owner' ? 'Владелец' : 'Менеджер'))}</b>
-        <div class="muted small">нал ${money(c.cash) || '0 ₸'} · безнал ${money(c.noncash) || '0 ₸'}${c.expenses ? ` · расходы ${money(c.expenses)}` : ''}${c.note ? ` · ${esc(c.note)}` : ''}</div></div>
-      <b>${money(c.gross) || '0 ₸'}</b></div>`).join('') : '<div class="empty small">За период смены не закрывались</div>'}</div>`;
-
-  $('#taxs').onclick = (e) => busy(e.target, async () => {
-    const v = Math.round(Number($('#taxr').value) * 10) / 10;
-    if (!(v >= 0 && v <= 30)) return toastErr('Ставка — от 0 до 30%');
-    const { error } = await sb.from('businesses').update({ tax_rate: v }).eq('id', S.biz.id);
-    if (error) return toastErr(error);
-    S.biz.tax_rate = v; toast('Ставка сохранена'); renderAcc();
-  });
-  $$('.item[data-id]', $('#accBody')).forEach((el) => {
-    el.onclick = async () => {
-      const x = exp.find((r) => r.id === el.dataset.id);
-      if (!x || !(await confirmDlg(`Удалить «${x.title}» на ${money(x.amount)}?`, 'Удалить', true))) return;
-      const { error } = await sb.from('expenses').delete().eq('id', x.id);
-      if (error) return toastErr(error);
-      toast('Удалено'); renderAcc();
-    };
-  });
+        <div class="muted small">нал ${m0(c.cash)} · безнал ${m0(c.noncash)}${c.expenses ? ` · расходы ${m0(c.expenses)}` : ''}${c.note ? ` · ${esc(c.note)}` : ''}</div></div>
+      <b>${m0(c.gross)}</b></div>`).join('') : '<div class="empty small">За период смены не закрывались</div>'}</div>`;
 }
 
-function expenseModal(kind) {
-  const isTax = kind === 'tax';
-  const m = modal({
-    title: isTax ? 'Налоговый платёж' : 'Новый расход',
-    body: `<form id="xf" class="form-grid" novalidate>
-      <label class="field full"><span>${isTax ? 'За что' : 'На что'}</span><input class="input" name="title" maxlength="120" value="${isTax ? 'Налог (упрощёнка)' : ''}" placeholder="${isTax ? '' : 'Аренда, расходники, реклама…'}"></label>
-      <label class="field"><span>Сумма, ₸</span><input class="input" name="amount" type="number" inputmode="numeric" min="1"></label>
-      <label class="field"><span>Дата</span><input class="input" name="day" type="date" value="${todayInTz(tz())}"></label></form>`,
-    footer: '<button class="btn" data-a="close">Отмена</button><button class="btn btn-pri" data-a="save">Сохранить</button>',
-  });
-  $('[data-a=close]', m.el).onclick = m.close;
-  $('[data-a=save]', m.el).onclick = (e) => busy(e.target, async () => {
-    const f = $('#xf', m.el);
-    const title = f.title.value.trim(), amount = Math.round(Number(f.amount.value));
-    if (!title) return toastErr('Укажите, на что расход');
-    if (!amount || amount < 1) return toastErr('Введите сумму');
-    if (!f.day.value) return toastErr('Укажите дату');
-    const today = todayInTz(tz());
-    const at = f.day.value === today ? new Date() : zonedToUtc(f.day.value, '12:00', tz());
-    const { error } = await sb.from('expenses').insert({ business_id: S.biz.id, kind, title, amount, occurred_at: at.toISOString(), created_by: 'owner' });
-    if (error) return toastErr(error);
-    toast('Сохранено'); m.close(); renderAcc();
-  });
+// ---------- Зарплата мастеров ----------
+async function renderPayroll() {
+  const pb = periodBar(renderPayroll);
+  $('#page').innerHTML = `<div class="page-h"><h2>Зарплата мастеров</h2><span id="payTot" class="muted"></span></div>${pb.html}<div id="payBody"><div class="spinner"></div></div>`;
+  pb.bind();
+  let earn;
+  try { earn = await fetchEarnings(pb.from, pb.to); } catch (e) { $('#payBody').innerHTML = `<div class="empty">${esc(errMsg(e))}</div>`; return; }
+  if (!$('#payBody')) return;
+  const rows = payrollRows(earn), total = sum(rows, (r) => r.pay);
+  $('#payTot').innerHTML = `Итого к выплате: <b style="color:var(--text)">${m0(total)}</b>`;
+  $('#payBody').innerHTML = `<h3 style="margin:0 0 8px">Ведомость по зарплате мастеров</h3>
+    <div class="stack" style="gap:8px">${rows.map((r) => `<div class="list-item" ${r.st ? `data-id="${r.st.id}"` : 'style="cursor:default"'}>
+      <span class="avatar">${esc((r.name[0] || '?').toUpperCase())}</span>
+      <div class="grow"><b>${esc(r.name)}</b> <span class="muted">· ставка ${r.st ? (r.st.share_pct || 0) + '%' : '—'}</span>
+        <div class="muted small">Выручка: ${m0(r.rev)} · Визитов: ${r.n}${r.st && !r.st.share_pct ? ' · <span style="color:var(--warn)">ставка не задана — нажмите, чтобы указать</span>' : ''}</div></div>
+      <div style="text-align:right"><div class="muted small">Начислено</div><b>${m0(r.pay)}</b></div></div>`).join('') || '<div class="card empty">Нет сотрудников</div>'}</div>
+    <p class="muted small" style="margin-top:12px">Начислено = выручка мастера × его ставка. Ставку меняйте в карточке сотрудника.</p>`;
+  $$('#payBody .list-item[data-id]').forEach((el) => { el.onclick = () => staffModal(S.staff.find((x) => x.id === el.dataset.id)); });
 }
 
-// ---------- Касса менеджера (только сегодня) ----------
-async function renderMgrCash() {
-  const day = todayInTz(tz());
-  $('#page').innerHTML = `<div class="page-h"><h2>Касса за сегодня</h2>
-      <span class="row" style="gap:8px;flex-wrap:wrap"><button class="btn btn-sm btn-pri" id="addE">+ Оплата</button><button class="btn btn-sm" id="addX">+ Расход</button><button class="btn btn-sm" id="closeS">🔒 Закрыть смену</button></span></div>
-    ${mgrBadge()}<div class="muted small" style="margin-bottom:12px">${esc(humanDate(day, false))}. Прошлые дни и общие итоги видит только владелец.</div>
-    <div id="mBody"><div class="spinner"></div></div>`;
-  $('#addE').onclick = () => mgrPayModal({});
-  $('#addX').onclick = () => mgrExpenseModal();
-  let earn, exp, closings;
-  try { [earn, exp, closings] = await Promise.all([fetchEarnings(day, day), fetchExpenses(day, day), fetchClosings(day, day)]); }
-  catch (e) { $('#mBody').innerHTML = `<div class="empty">Не удалось загрузить: ${esc(errMsg(e))}</div>`; return; }
-  if (!$('#mBody')) return;
-  const total = sum(earn), cash = sum(earn.filter((r) => r.method === 'cash')), costs = sum(exp);
-  $('#closeS').onclick = async (e) => {
-    if (!(await confirmDlg(`Закрыть смену? Выручка ${money(total) || '0 ₸'}, наличные ${money(cash) || '0 ₸'}, расходы ${money(costs) || '0 ₸'}, в кассе ${money(cash - costs) || '0 ₸'}. Владелец получит итог в Telegram.`, 'Закрыть смену'))) return;
-    await busy(e.target, async () => {
-      const { data, error } = await sb.rpc('close_shift', { p_note: null });
-      if (error) return toastErr(error);
-      toast(`Смена закрыта: ${money(data.gross) || '0 ₸'}`); renderMgrCash();
+// ---------- Книга проводок ----------
+const LG = { cat: '', staff: '' };
+async function renderLedger() {
+  const pb = periodBar(renderLedger);
+  $('#page').innerHTML = `<div class="page-h"><h2>Журнал проводок</h2>
+      <span class="row" style="gap:8px;flex-wrap:wrap"><button class="btn btn-sm btn-pri" id="addL">+ Проводка</button><button class="btn btn-sm" id="xl">⬇️ Excel</button></span></div>
+    ${pb.html}
+    <div class="row filters"><select class="select" id="lc"><option value="">Все статьи</option><option value="income">Приход (выручка)</option><option value="expense">Расходы</option><option value="tax">Налоги</option></select>
+      <select class="select" id="ls"><option value="">Все мастера</option>${S.staff.map((x) => `<option value="${x.id}">${esc(x.name)}</option>`).join('')}</select></div>
+    <div id="lgTot" class="grid grid-4 keep-2" style="margin-bottom:12px"></div>
+    <div id="lgBody"><div class="spinner"></div></div>`;
+  pb.bind();
+  $('#lc').value = LG.cat; $('#ls').value = LG.staff;
+  $('#addL').onclick = () => {
+    const m = modal({ title: 'Новая проводка', body: `<div class="stack"><button class="btn btn-block" data-k="income">+ Приход (оплата клиента)</button>
+      <button class="btn btn-block" data-k="expense">– Расход</button><button class="btn btn-block" data-k="tax">– Налог</button></div>`, footer: '<button class="btn" data-a="close">Отмена</button>' });
+    $('[data-a=close]', m.el).onclick = m.close;
+    $$('[data-k]', m.el).forEach((b) => { b.onclick = () => { m.close(); if (b.dataset.k === 'income') earningModal(null); else expenseModal(b.dataset.k); }; });
+  };
+  let earn, exp;
+  try { [earn, exp] = await Promise.all([fetchEarnings(pb.from, pb.to), fetchExpenses(pb.from, pb.to)]); } catch (e) { $('#lgBody').innerHTML = `<div class="empty">${esc(errMsg(e))}</div>`; return; }
+  if (!$('#lgBody')) return;
+  $('#xl').onclick = () => exportAcc(earn, exp, pb);
+  const draw = () => {
+    let rows = [
+      ...earn.map((e) => ({ t: e.occurred_at, kind: 'income', e })),
+      ...exp.map((x) => ({ t: x.occurred_at, kind: x.kind, x })),
+    ];
+    if (LG.cat) rows = rows.filter((r) => r.kind === LG.cat);
+    if (LG.staff) rows = rows.filter((r) => r.kind === 'income' && r.e.staff_id === LG.staff);
+    rows.sort((a, b) => new Date(b.t) - new Date(a.t));
+    const inc = sum(rows.filter((r) => r.kind === 'income'), (r) => r.e.amount);
+    const ex = sum(rows.filter((r) => r.kind === 'expense'), (r) => r.x.amount);
+    const tx = sum(rows.filter((r) => r.kind === 'tax'), (r) => r.x.amount);
+    $('#lgTot').innerHTML = [[m0(inc), 'Приход'], [m0(ex), 'Расходы'], [m0(tx), 'Налоги'], [m0(inc - ex - tx), 'Сальдо']]
+      .map(([v, l]) => `<div class="card stat flat"><div class="v">${v}</div><div class="l">${l}</div></div>`).join('');
+    $('#lgBody').innerHTML = rows.length ? `<div class="card day-list">${rows.map((r, i) => {
+      const date = `<div class="t" style="min-width:74px">${esc(humanDate(dateStrInTz(r.t, tz()), false))}<div class="muted small" style="font-weight:400">${hhmm(r.t)}</div></div>`;
+      if (r.kind === 'income') {
+        const e = r.e;
+        return `<div class="item" data-i="${i}" style="cursor:pointer">${date}<div class="grow"><b>${esc(e.client_name || (e.booking_id ? 'Клиент' : 'Гость (без записи)'))}</b>${e.staff_name ? ` <span class="muted small">· ${esc(e.staff_name)}</span>` : ''}
+          <div class="muted small">${[e.service_name, PAY[e.method], e.created_by === 'manager' ? 'принял менеджер' : e.created_by === 'staff' ? 'отметил мастер' : ''].filter(Boolean).map(esc).join(' · ')}</div></div>
+          <span class="money-plus">+ ${m0(e.amount)}</span><button class="x" data-del="${i}" title="Удалить">✕</button></div>`;
+      }
+      const x = r.x;
+      return `<div class="item">${date}<div class="grow"><b>${esc(x.title)}</b><div class="muted small">Статья: ${r.kind === 'tax' ? 'Налоги' : 'Расходы'}${x.created_by === 'manager' ? ' · внёс менеджер' : ''}</div></div>
+        <span class="money-minus">– ${m0(x.amount)}</span><button class="x" data-del="${i}" title="Удалить">✕</button></div>`;
+    }).join('')}</div>` : '<div class="card empty">За период проводок нет</div>';
+    $$('#lgBody [data-i]').forEach((el) => { el.onclick = (ev) => { if (ev.target.closest('[data-del]')) return; earningModal(rows[+el.dataset.i].e); }; });
+    $$('#lgBody [data-del]').forEach((b) => {
+      b.onclick = async (ev) => {
+        ev.stopPropagation();
+        const r = rows[+b.dataset.del], amt = (r.e || r.x).amount;
+        if (!(await confirmDlg(`Удалить проводку на ${m0(amt)}?`, 'Удалить', true))) return;
+        const { error } = await sb.from(r.e ? 'earnings' : 'expenses').delete().eq('id', (r.e || r.x).id);
+        if (error) return toastErr(error);
+        toast('Удалено'); renderLedger();
+      };
     });
   };
-  $('#mBody').innerHTML = `${closings.length ? `<div class="alert alert-info" style="margin-bottom:12px">🔒 Смена закрыта в ${hhmm(closings[0].created_at)}: выручка ${money(closings[0].gross) || '0 ₸'}. Оплаты после этого можно добавлять и закрыть смену ещё раз.</div>` : ''}
-    <div class="grid grid-4 keep-2" style="margin-bottom:14px">
-      <div class="stat card"><div class="v">${money(total) || '0 ₸'}</div><div class="l">Выручка · ${earn.length} ${plural(earn.length, 'оплата', 'оплаты', 'оплат')}</div></div>
-      <div class="stat card"><div class="v">${money(cash) || '0 ₸'}</div><div class="l">💵 Наличные</div></div>
-      <div class="stat card"><div class="v">${money(total - cash) || '0 ₸'}</div><div class="l">📱 Kaspi и 💳 карта</div></div>
-      <div class="stat card"><div class="v">${money(cash - costs) || '0 ₸'}</div><div class="l">В кассе: нал − расходы ${money(costs) || '0 ₸'}</div></div></div>
-    <h3 style="margin:6px 0">Оплаты</h3>
-    <div class="card day-list" style="margin-bottom:16px">${earn.length ? earn.map((r) => `<div class="item">
-      <div class="t" style="min-width:56px">${hhmm(r.occurred_at)}</div>
-      <div class="grow"><b>${esc(r.client_name || 'Клиент без имени')}</b> <span class="muted small">${esc(r.staff_name || '')}</span>
-        <div class="muted small">${[r.service_name, PAY[r.method], r.note].filter(Boolean).map(esc).join(' · ')}</div></div><b>${money(r.amount)}</b></div>`).join('') : '<div class="empty small">Оплат пока нет</div>'}</div>
-    <h3 style="margin:6px 0">Расходы</h3>
-    <div class="card day-list">${exp.length ? exp.map((x) => `<div class="item"><div class="t" style="min-width:56px">${hhmm(x.occurred_at)}</div>
-      <div class="grow"><b>${esc(x.title)}</b></div><b>−${money(x.amount)}</b></div>`).join('') : '<div class="empty small">Расходов нет</div>'}</div>`;
+  $('#lc').onchange = (e) => { LG.cat = e.target.value; draw(); };
+  $('#ls').onchange = (e) => { LG.staff = e.target.value; draw(); };
+  draw();
 }
 
-function mgrPayModal(pre) {
-  const bk = pre.booking || null;
-  const staff = S.staff.filter((x) => x.is_active || (bk && x.id === bk.staff_id));
-  const m = modal({
-    title: bk ? `Оплата · ${bk.client_name}` : 'Принять оплату',
-    body: `<form id="pf2" class="form-grid" novalidate>
-      <label class="field"><span>Сумма, ₸</span><input class="input" name="amount" type="number" inputmode="numeric" min="1" value="${bk?.price ?? ''}"></label>
-      <label class="field"><span>Способ оплаты</span><select class="select" name="method">${Object.entries(PAY).map(([k, t]) => `<option value="${k}">${t}</option>`).join('')}</select></label>
-      ${bk ? '' : `<label class="field"><span>Мастер</span><select class="select" name="staff"><option value="">— не указан —</option>${staff.map((x) => `<option value="${x.id}">${esc(x.name)}</option>`).join('')}</select></label>
-      <label class="field"><span>Клиент</span><input class="input" name="client" maxlength="80"></label>
-      <label class="field full"><span>Услуга</span><input class="input" name="service" maxlength="120"></label>`}
-      <label class="field full"><span>Комментарий</span><input class="input" name="note" maxlength="300"></label></form>`,
-    footer: '<button class="btn" data-a="close">Отмена</button><button class="btn btn-pri" data-a="save">Принять оплату</button>',
-  });
-  $('[data-a=close]', m.el).onclick = m.close;
-  setTimeout(() => { const a = $('#pf2 [name=amount]', m.el); a && a.focus(); }, 50);
-  $('[data-a=save]', m.el).onclick = (e) => busy(e.target, async () => {
-    const f = $('#pf2', m.el);
-    const amount = Math.round(Number(f.amount.value));
-    if (!amount || amount < 1) return toastErr('Введите сумму');
-    const { error } = await sb.rpc('manager_add_earning', {
-      p_amount: amount, p_method: f.method.value, p_staff: bk ? null : (f.staff.value || null), p_booking: bk ? bk.id : null,
-      p_client: bk ? null : (f.client.value.trim() || null), p_service: bk ? null : (f.service.value.trim() || null), p_note: f.note.value.trim() || null,
-    });
-    if (error) return toastErr(error);
-    toast('Оплата принята'); m.close();
-    if ($('#mBody')) renderMgrCash(); else drawDayIfJournal();
-  });
-}
-
-function mgrExpenseModal() {
-  const m = modal({
-    title: 'Расход из кассы',
-    body: `<form id="mx" class="form-grid" novalidate>
-      <label class="field full"><span>На что</span><input class="input" name="title" maxlength="120" placeholder="Расходники, вода, хозтовары…"></label>
-      <label class="field"><span>Сумма, ₸</span><input class="input" name="amount" type="number" inputmode="numeric" min="1"></label></form>`,
-    footer: '<button class="btn" data-a="close">Отмена</button><button class="btn btn-pri" data-a="save">Записать</button>',
-  });
-  $('[data-a=close]', m.el).onclick = m.close;
-  $('[data-a=save]', m.el).onclick = (e) => busy(e.target, async () => {
-    const f = $('#mx', m.el);
-    const title = f.title.value.trim(), amount = Math.round(Number(f.amount.value));
-    if (!title) return toastErr('Укажите, на что расход');
-    if (!amount || amount < 1) return toastErr('Введите сумму');
-    const { error } = await sb.rpc('manager_add_expense', { p_title: title, p_amount: amount });
-    if (error) return toastErr(error);
-    toast('Расход записан'); m.close(); renderMgrCash();
-  });
+// ---------- Excel: оплаты, расходы, зарплата, итоги ----------
+function exportAcc(earn, exp, pb) {
+  const H = (v) => ({ v, head: true });
+  const sorted = [...earn].sort((a, b) => new Date(a.occurred_at) - new Date(b.occurred_at));
+  const rev = sum(earn), costs = sum(exp.filter((x) => x.kind === 'expense')), taxPaid = sum(exp.filter((x) => x.kind === 'tax'));
+  const tax = Math.round(rev * taxRate() / 100), payroll = sum(earn, shareOf);
+  const pays = [['Дата', 'Время', 'Мастер', 'Клиент', 'Услуга', 'Способ', 'Сумма', 'Тип', 'Кто принял'].map(H),
+    ...sorted.map((r) => [{ v: dateStrInTz(r.occurred_at, tz()), t: 'date' }, hhmm(r.occurred_at), r.staff_name || '', r.client_name || '', r.service_name || '',
+      PAY[r.method] || r.method, { v: r.amount, t: 'money' }, r.booking_id ? 'по записи' : 'без записи',
+      { owner: 'владелец', manager: 'менеджер', staff: 'мастер' }[r.created_by] || '']),
+    [{ v: 'ИТОГО', bold: true }, '', '', '', '', '', { v: rev, t: 'money', bold: true }]];
+  const exps = [['Дата', 'Статья', 'Комментарий', 'Сумма', 'Кто внёс'].map(H),
+    ...[...exp].sort((a, b) => new Date(a.occurred_at) - new Date(b.occurred_at)).map((x) => [{ v: dateStrInTz(x.occurred_at, tz()), t: 'date' },
+      x.kind === 'tax' ? 'Налоги' : 'Расходы', x.title, { v: x.amount, t: 'money' }, x.created_by === 'manager' ? 'менеджер' : 'владелец'])];
+  const pr = payrollRows(earn);
+  const pay = [['Мастер', 'Визитов', 'Выручка', 'Ставка, %', 'Начислено'].map(H),
+    ...pr.map((r) => [r.name, { v: r.n, t: 'num' }, { v: r.rev, t: 'money' }, { v: r.st ? r.st.share_pct || 0 : 0, t: 'num' }, { v: r.pay, t: 'money', bold: true }]),
+    [{ v: 'ИТОГО', bold: true }, '', { v: rev, t: 'money', bold: true }, '', { v: payroll, t: 'money', bold: true }]];
+  const tot = [['Показатель', 'Сумма'].map(H), ['Валовая выручка', { v: rev, t: 'money' }], ['Наличные', { v: sum(earn.filter((r) => r.method === 'cash')), t: 'money' }],
+    ['Kaspi и карта', { v: sum(earn.filter((r) => r.method !== 'cash')), t: 'money' }], ['Расходы', { v: costs, t: 'money' }],
+    [`Налог (${taxRate()}%), расчёт`, { v: tax, t: 'money' }], ['Налог уплачен', { v: taxPaid, t: 'money' }], ['Прибыль до ФОТ', { v: rev - costs - tax, t: 'money', bold: true }],
+    ['Зарплата мастеров', { v: payroll, t: 'money' }], ['Чистый остаток владельцу', { v: rev - costs - tax - payroll, t: 'money', bold: true }]];
+  const biz = S.biz.name.replace(/[^\p{L}\p{N}]+/gu, '_').replace(/^_+|_+$/g, '').slice(0, 30) || 'buh';
+  downloadXlsx(`${biz}_бухгалтерия_${pb.from}_${pb.to}.xlsx`, [
+    { name: 'Итоги', widths: [30, 16], rows: tot },
+    { name: 'Оплаты', widths: [12, 8, 18, 22, 22, 12, 14, 12, 12], rows: pays, filterTo: pays.length - 1 },
+    { name: 'Расходы и налоги', widths: [12, 12, 36, 14, 12], rows: exps },
+    { name: 'Зарплата', widths: [24, 10, 15, 10, 15], rows: pay },
+  ]);
+  toast('Excel-файл скачан');
 }

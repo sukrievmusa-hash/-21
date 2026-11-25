@@ -1,7 +1,7 @@
 import {
   sb, $, $$, esc, money, durText, toastErr, phoneMask, normPhone, fmtPhone, todayInTz, addDays,
   isoWeekday, WD_SHORT, MONTHS_SHORT, humanDate, timeStrInTz, minutesInTz, pageUrl, store, telLink, brandify, prepayAmount, photoUrl,
-} from './lib.js?v=20261125a';
+} from './lib.js?v=20261125b';
 
 const slug = new URLSearchParams(location.search).get('b') || '';
 const app = $('#app');
@@ -101,7 +101,7 @@ function stepService() {
   for (const s of S.biz.services) {
     const btn = document.createElement('button');
     btn.className = 'opt';
-    btn.innerHTML = `<div class="grow"><b>${esc(s.name)}</b>
+    btn.innerHTML = `${s.photo ? `<img class="opt-ph" src="${esc(photoUrl(s.photo))}" alt="" loading="lazy">` : ''}<div class="grow"><b>${esc(s.name)}</b>
       <span class="muted small">${durText(s.duration_min)}${s.description ? ' · ' + esc(s.description) : ''}</span></div>
       ${s.price != null ? `<div class="price">${money(s.price)}</div>` : ''}<span class="muted">›</span>`;
     btn.onclick = () => { S.service = s; stepStaff(); };

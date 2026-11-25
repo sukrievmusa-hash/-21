@@ -1,5 +1,5 @@
-import { sb, $, $$, esc, money, toast, toastErr, errMsg, modal, confirmDlg, busy, fmtDateShort, pageUrl, copyText, waLink, normPhone, BRAND, INITIAL_HASH } from './lib.js?v=20261125a';
-import { renderAuth, renderNewPassword } from './auth.js?v=20261125a';
+import { sb, $, $$, esc, money, toast, toastErr, errMsg, modal, confirmDlg, busy, fmtDateShort, pageUrl, copyText, waLink, normPhone, BRAND, INITIAL_HASH } from './lib.js?v=20261125b';
+import { renderAuth, renderNewPassword } from './auth.js?v=20261125b';
 
 const root = $('#root');
 const TZ = 'Asia/Almaty';
