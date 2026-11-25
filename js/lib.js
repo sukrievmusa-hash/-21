@@ -1,4 +1,4 @@
-import { CONFIG } from './config.js?v=20261125g';
+import { CONFIG } from './config.js?v=20261125h';
 
 // Запоминаем адрес до того, как клиент Supabase уберёт токены из ссылки
 export const INITIAL_HASH = location.hash;

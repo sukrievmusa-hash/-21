@@ -3,9 +3,9 @@ import {
   normPhone, fmtPhone, phoneMask, waLink, telLink, zonedToUtc, dateStrInTz, timeStrInTz, minutesInTz,
   todayInTz, addDays, isoWeekday, WD_SHORT, WD_FULL, humanDate, humanDateTime, fmtDateShort, minsToHHMM,
   durText, plural, statusBadge, STATUS, slugify, pageUrl, BRAND, INITIAL_HASH, photoUrl, resizeImage, STAFF_AUTH_KEY,
-} from './lib.js?v=20261125g';
-import { renderAuth, renderNewPassword } from './auth.js?v=20261125g';
-import { downloadXlsx } from './xlsx.js?v=20261125g';
+} from './lib.js?v=20261125h';
+import { renderAuth, renderNewPassword } from './auth.js?v=20261125h';
+import { downloadXlsx } from './xlsx.js?v=20261125h';
 
 const root = $('#root');
 const S = {
@@ -898,7 +898,7 @@ function renderStaff() {
     <div class="alert ${n >= limit ? 'alert-warn' : 'alert-info'}" style="margin-bottom:12px">Работают ${n} из ${limit} по тарифу «${esc(p.title)}».${n >= limit && bigger ? ` Нужно больше — тариф <a href="#billing">«${esc(bigger.title)}»</a> (до ${bigger.staff_limit}).` : ''}</div>
     <div id="list">${S.staff.map((s) => `<div class="list-item ${s.is_active ? '' : 'inactive'}" data-id="${s.id}">
       <span class="avatar">${esc(s.name[0]?.toUpperCase() || '?')}</span>
-      <div class="grow"><b>${esc(s.name)}</b>${s.title ? ` <span class="muted">· ${esc(s.title)}</span>` : ''}${s.share_pct ? ` <span class="muted">(${s.share_pct}%)</span>` : ''} ${s.is_active ? '' : '<span class="badge b-cancelled">не работает</span>'}
+      <div class="grow"><b>${esc(s.name)}</b>${s.title ? ` <span class="muted">· ${esc(s.title)}</span>` : ''}${s.share_pct || s.salary_fixed ? ` <span class="muted">(${esc(payText(s, true))})</span>` : ''} ${s.is_active ? '' : '<span class="badge b-cancelled">не работает</span>'}
         <div class="muted small">${esc(scheduleText(s.id))}</div>
         <div class="small" style="margin-top:2px">${s.user_id ? `🔑 вход: <b>${esc(s.login)}</b>${s.tg_chat_id ? ' · ✈️ Telegram подключён' : ' · Telegram не подключён'}` : '<span class="muted">🔒 нет входа — откройте, чтобы выдать логин и пароль</span>'}</div></div><span class="muted">›</span></div>`).join('') || '<div class="card empty">Сотрудников пока нет</div>'}</div>
     <div class="page-h" style="margin-top:22px"><h3 style="margin:0">Менеджеры</h3><button class="btn btn-sm btn-pri" id="addMgr">+ Менеджер</button></div>
@@ -1002,7 +1002,15 @@ function staffModal(s) {
         <label class="field"><span>Имя</span><input class="input" name="name" required maxlength="60" value="${esc(s?.name || '')}"></label>
         <label class="field"><span>Должность <span class="muted">(необязательно)</span></span><input class="input" name="title" maxlength="60" value="${esc(s?.title || '')}" placeholder="Барбер, мастер маникюра…"></label>
       </div>
-      <label class="field"><span>Ставка мастера (% от выручки) <span class="muted">— для раздела «Зарплата»</span></span><input class="input" name="share" type="number" min="0" max="100" step="1" inputmode="numeric" value="${s?.share_pct ?? 0}" style="max-width:140px"></label>
+      <div class="card flat" style="padding:12px"><h3 style="margin:0 0 4px">💰 Зарплата</h3>
+        <p class="muted small" style="margin:0 0 8px">Можно процент, фикс или и то и другое — к выплате пойдёт сумма. Ненужное оставьте 0.</p>
+        <div class="form-grid">
+          <label class="field"><span>Процент от выручки, %</span><input class="input" name="share" type="number" min="0" max="100" step="1" inputmode="numeric" value="${s?.share_pct ?? 0}"></label>
+          <label class="field"><span>Фиксированная сумма, ₸</span><input class="input" name="fixed" type="number" min="0" step="1000" inputmode="numeric" value="${s?.salary_fixed ?? 0}"></label>
+          <label class="field full"><span>Фикс начисляется</span><select class="select" name="fixper">
+            <option value="month" ${s?.salary_period !== 'day' ? 'selected' : ''}>в месяц (оклад, делится по дням)</option>
+            <option value="day" ${s?.salary_period === 'day' ? 'selected' : ''}>за выход (за каждый день, когда были оплаты)</option></select></label>
+        </div><div class="small" id="payHint" style="margin-top:6px"></div></div>
       <label class="check"><input type="checkbox" name="active" ${!s || s.is_active ? 'checked' : ''}><span>Работает и принимает записи</span></label>
       <div><h3 style="margin:8px 0 4px">График работы</h3>${rows.join('')}
         <button type="button" class="btn btn-sm btn-ghost" id="copyMon">Скопировать понедельник на все рабочие дни</button></div>
@@ -1014,6 +1022,9 @@ function staffModal(s) {
     footer: `${!isNew ? '<button class="btn btn-danger" data-a="del">Удалить</button>' : ''}<button class="btn" data-a="close">Отмена</button><button class="btn btn-pri" data-a="save">Сохранить</button>`,
   });
   const f = $('#stf', m.el);
+  const payHint = () => { const h = $('#payHint', m.el); if (h) h.innerHTML = '<span class="muted">Будет:</span> <b>' + esc(payText({ share_pct: +f.share.value || 0, salary_fixed: +f.fixed.value || 0, salary_period: f.fixper.value })) + '</b>'; };
+  ['share', 'fixed', 'fixper'].forEach((n) => { f[n].addEventListener('input', payHint); f[n].addEventListener('change', payHint); });
+  payHint();
   $$('input[name=br]', f).forEach((c) => { c.onchange = () => c.closest('.hours-times').querySelector('.brk').classList.toggle('hide', !c.checked); });
   $('#copyMon', m.el).onclick = () => {
     const mon = $('.hours-row[data-d="1"]', f);
@@ -1055,7 +1066,8 @@ function staffModal(s) {
       } else hours.push({ weekday: d, start: st, end: en });
     }
     const share = Math.min(100, Math.max(0, parseInt(f.share.value, 10) || 0));
-    const payload = { name, title: f.title.value.trim() || null, is_active: f.active.checked, share_pct: share };
+    const fixed = Math.min(100000000, Math.max(0, Math.round(Number(f.fixed.value) || 0)));
+    const payload = { name, title: f.title.value.trim() || null, is_active: f.active.checked, share_pct: share, salary_fixed: fixed, salary_period: f.fixper.value === 'day' ? 'day' : 'month' };
     await busy(e.target, async () => {
       const r = isNew
         ? await sb.from('staff').insert({ ...payload, business_id: S.biz.id, sort: S.staff.length }).select().single()
@@ -2039,14 +2051,14 @@ async function shiftModal() {
   const owner = S.role !== 'manager';
   const costs = sum(exp.filter((x) => x.kind === 'expense'));
   const total = sum(earn), cash = sum(earn.filter((r) => r.method === 'cash'));
-  const share = owner ? sum(earn, shareOf) : 0;
+  const share = owner ? sum(earn, shareOf) + fixedForDay(day, earn) : 0;
   const m = modal({
     title: 'Закрытие смены',
     body: `<div class="stack" style="gap:0">
       <div class="kv"><span>Выручка за смену (сегодня)</span><b>${m0(total)}</b></div>
       <div class="kv"><span>Наличные / Kaspi и карта</span><b>${m0(cash)} / ${m0(total - cash)}</b></div>
       <div class="kv"><span>Расходы из кассы</span><b>– ${m0(costs)}</b></div>
-      ${owner ? `<div class="kv"><span>Доля мастеров за смену</span><b>– ${m0(share)}</b></div>` : ''}
+      ${owner ? `<div class="kv"><span>Зарплата мастеров за смену</span><b>– ${m0(share)}</b></div>` : ''}
       <div class="kv"><span><b>Наличных должно быть в кассе</b></span><b style="font-size:18px">${m0(cash - costs)}</b></div>
       <label class="field" style="margin-top:12px"><span>Комментарий <span class="muted">(необязательно)</span></span><input class="input" id="shN" maxlength="300" placeholder="Например: размен 5 000 ₸ оставил в кассе"></label>
       <p class="muted small" style="margin:8px 0 0">${earn.length} ${plural(earn.length, 'оплата', 'оплаты', 'оплат')} за сегодня. ${owner ? '' : 'Владелец получит итог в Telegram.'}</p></div>`,
@@ -2115,16 +2127,51 @@ function finNav(cur) {
   return `<div class="seg seg3" style="margin-bottom:14px">${FIN_SUB.map(([k, t]) => `<button data-fin="${k}" class="${k === cur ? 'on' : ''}">${t}</button>`).join('')}</div>`;
 }
 function bindFinNav() { $$('[data-fin]').forEach((b) => { b.onclick = () => { location.hash = b.dataset.fin; }; }); }
-function payrollRows(earn) {
+// Как платим сотруднику: «50%», «150 000 ₸/мес», «5 000 ₸ за выход + 30%»
+function payText(st, short = false) {
+  const parts = [];
+  if (st.salary_fixed) parts.push(`${money(st.salary_fixed)}${st.salary_period === 'day' ? ' за выход' : short ? '/мес' : ' в месяц'}`);
+  if (st.share_pct) parts.push(`${st.share_pct}%${short ? '' : ' от выручки'}`);
+  return parts.join(' + ') || (short ? '' : 'не задано');
+}
+const daysInMonth = (d) => { const [y, m] = d.split('-').map(Number); return new Date(Date.UTC(y, m, 0)).getUTCDate(); };
+// Фиксированная часть за период: оклад — пропорционально дням (по каждому месяцу), «за выход» — по дням с оплатами
+function fixedPart(st, from, to, staffEarn) {
+  const amt = (st && st.is_active !== false && st.salary_fixed) || 0;
+  if (!amt) return { sum: 0, note: '' };
+  if (st.salary_period === 'day') {
+    const days = new Set(staffEarn.map((e) => dateStrInTz(e.occurred_at, tz()))).size;
+    return { sum: amt * days, note: `фикс ${money(amt)} × ${days} ${plural(days, 'выход', 'выхода', 'выходов')}` };
+  }
+  const since = st.created_at ? dateStrInTz(st.created_at, tz()) : from; // оклад — с дня, когда сотрудника добавили
+  let v = 0, n = 0;
+  for (let d = from > since ? from : since; d <= to; d = addDays(d, 1)) { v += amt / daysInMonth(d); n++; }
+  return { sum: Math.round(v), note: `оклад ${money(amt)}/мес · ${n} ${plural(n, 'день', 'дня', 'дней')}` };
+}
+// Фикс на один день — для диаграммы по дням
+function fixedForDay(d, dayEarn) {
+  let v = 0;
+  for (const st of S.staff) {
+    if (!st.is_active || !st.salary_fixed) continue;
+    if (st.salary_period === 'day') { if (dayEarn.some((e) => e.staff_id === st.id)) v += st.salary_fixed; } else if (!st.created_at || d >= dateStrInTz(st.created_at, tz())) v += st.salary_fixed / daysInMonth(d);
+  }
+  return Math.round(v);
+}
+function payrollRows(earn, from, to) {
   const map = new Map();
   for (const e of earn) {
     const k = e.staff_id || 'none';
-    const o = map.get(k) || { st: S.staff.find((x) => x.id === e.staff_id) || null, name: e.staff_name || 'Без мастера', rev: 0, n: 0, pay: 0 };
-    o.rev += e.amount; o.n++; o.pay += shareOf(e); map.set(k, o);
+    const o = map.get(k) || { st: S.staff.find((x) => x.id === e.staff_id) || null, name: e.staff_name || 'Без мастера', rev: 0, n: 0, pct: 0, fix: 0, note: '', pay: 0, earn: [] };
+    o.rev += e.amount; o.n++; o.pct += shareOf(e); o.earn.push(e); map.set(k, o);
   }
-  for (const st of S.staff) if (st.is_active && !map.has(st.id)) map.set(st.id, { st, name: st.name, rev: 0, n: 0, pay: 0 });
-  return [...map.values()].sort((a, b) => b.rev - a.rev);
+  for (const st of S.staff) if (st.is_active && !map.has(st.id)) map.set(st.id, { st, name: st.name, rev: 0, n: 0, pct: 0, fix: 0, note: '', pay: 0, earn: [] });
+  for (const o of map.values()) {
+    if (o.st && from && to) { const f = fixedPart(o.st, from, to, o.earn); o.fix = f.sum; o.note = f.note; }
+    o.pay = o.pct + o.fix;
+  }
+  return [...map.values()].sort((a, b) => b.pay - a.pay || b.rev - a.rev);
 }
+const payrollTotal = (earn, from, to) => sum(payrollRows(earn, from, to), (r) => r.pay);
 
 // ---------- Бухгалтерия ----------
 async function renderAcc() {
@@ -2142,7 +2189,7 @@ async function renderAcc() {
   $('#xl').onclick = () => exportAcc(earn, exp, pb);
   const rate = taxRate(), rev = sum(earn);
   const costs = sum(exp.filter((x) => x.kind === 'expense')), taxPaid = sum(exp.filter((x) => x.kind === 'tax'));
-  const tax = Math.round(rev * rate / 100), preFot = rev - costs - tax, payroll = sum(earn, shareOf), net = preFot - payroll;
+  const tax = Math.round(rev * rate / 100), preFot = rev - costs - tax, payroll = payrollTotal(earn, pb.from, pb.to), net = preFot - payroll;
   const cash = sum(earn.filter((r) => r.method === 'cash'));
   const walkIn = sum(earn.filter((r) => !r.booking_id));
   const pct = (v) => (rev > 0 ? Math.max(0, v) / rev * 100 : 0);
@@ -2179,15 +2226,17 @@ async function renderPayroll() {
   let earn;
   try { earn = await fetchEarnings(pb.from, pb.to); } catch (e) { $('#payBody').innerHTML = `<div class="empty">${esc(errMsg(e))}</div>`; return; }
   if (!$('#payBody')) return;
-  const rows = payrollRows(earn), total = sum(rows, (r) => r.pay);
+  const rows = payrollRows(earn, pb.from, pb.to), total = sum(rows, (r) => r.pay);
   $('#payTot').innerHTML = `Итого к выплате: <b style="color:var(--text)">${m0(total)}</b>`;
   $('#payBody').innerHTML = `<h3 style="margin:0 0 8px">Ведомость по зарплате мастеров</h3>
     <div class="stack" style="gap:8px">${rows.map((r) => `<div class="list-item" ${r.st ? `data-id="${r.st.id}"` : 'style="cursor:default"'}>
       <span class="avatar">${esc((r.name[0] || '?').toUpperCase())}</span>
-      <div class="grow"><b>${esc(r.name)}</b> <span class="muted">· ставка ${r.st ? (r.st.share_pct || 0) + '%' : '—'}</span>
-        <div class="muted small">Выручка: ${m0(r.rev)} · Визитов: ${r.n}${r.st && !r.st.share_pct ? ' · <span style="color:var(--warn)">ставка не задана — нажмите, чтобы указать</span>' : ''}</div></div>
+      <div class="grow"><b>${esc(r.name)}</b> <span class="muted">· ${r.st ? esc(payText(r.st, true) || 'оплата не задана') : '—'}</span>
+        <div class="muted small">Выручка: ${m0(r.rev)} · Визитов: ${r.n}</div>
+        ${r.st && (r.st.share_pct || r.st.salary_fixed) ? `<div class="muted small">${[r.st.share_pct ? `${r.st.share_pct}% = ${m0(r.pct)}` : '', r.fix ? `${esc(r.note)} = ${m0(r.fix)}` : ''].filter(Boolean).join(' · ')}</div>`
+          : r.st ? '<div class="small" style="color:var(--warn)">оплата не задана — нажмите, чтобы указать процент или фикс</div>' : ''}</div>
       <div style="text-align:right"><div class="muted small">Начислено</div><b>${m0(r.pay)}</b></div></div>`).join('') || '<div class="card empty">Нет сотрудников</div>'}</div>
-    <p class="muted small" style="margin-top:12px">Начислено = выручка мастера × его ставка. Ставку меняйте в карточке сотрудника.</p>`;
+    <p class="muted small" style="margin-top:12px">Начислено = процент от выручки мастера + фикс (оклад делится по дням периода, «за выход» — по дням, когда у мастера были оплаты). Меняйте в карточке сотрудника.</p>`;
   $$('#payBody .list-item[data-id]').forEach((el) => { el.onclick = () => staffModal(S.staff.find((x) => x.id === el.dataset.id)); });
 }
 
@@ -2261,7 +2310,7 @@ function exportAcc(earn, exp, pb) {
   const H = (v) => ({ v, head: true });
   const sorted = [...earn].sort((a, b) => new Date(a.occurred_at) - new Date(b.occurred_at));
   const rev = sum(earn), costs = sum(exp.filter((x) => x.kind === 'expense')), taxPaid = sum(exp.filter((x) => x.kind === 'tax'));
-  const tax = Math.round(rev * taxRate() / 100), payroll = sum(earn, shareOf);
+  const tax = Math.round(rev * taxRate() / 100), payroll = payrollTotal(earn, pb.from, pb.to);
   const pays = [['Дата', 'Время', 'Мастер', 'Клиент', 'Услуга', 'Способ', 'Сумма', 'Тип', 'Кто принял'].map(H),
     ...sorted.map((r) => [{ v: dateStrInTz(r.occurred_at, tz()), t: 'date' }, hhmm(r.occurred_at), r.staff_name || '', r.client_name || '', r.service_name || '',
       PAY[r.method] || r.method, { v: r.amount, t: 'money' }, r.booking_id ? 'по записи' : 'без записи',
@@ -2270,10 +2319,10 @@ function exportAcc(earn, exp, pb) {
   const exps = [['Дата', 'Статья', 'Комментарий', 'Сумма', 'Кто внёс'].map(H),
     ...[...exp].sort((a, b) => new Date(a.occurred_at) - new Date(b.occurred_at)).map((x) => [{ v: dateStrInTz(x.occurred_at, tz()), t: 'date' },
       x.kind === 'tax' ? 'Налоги' : 'Расходы', x.title, { v: x.amount, t: 'money' }, x.created_by === 'manager' ? 'менеджер' : 'владелец'])];
-  const pr = payrollRows(earn);
-  const pay = [['Мастер', 'Визитов', 'Выручка', 'Ставка, %', 'Начислено'].map(H),
-    ...pr.map((r) => [r.name, { v: r.n, t: 'num' }, { v: r.rev, t: 'money' }, { v: r.st ? r.st.share_pct || 0 : 0, t: 'num' }, { v: r.pay, t: 'money', bold: true }]),
-    [{ v: 'ИТОГО', bold: true }, '', { v: rev, t: 'money', bold: true }, '', { v: payroll, t: 'money', bold: true }]];
+  const pr = payrollRows(earn, pb.from, pb.to);
+  const pay = [['Мастер', 'Визитов', 'Выручка', 'Условия', 'Процент', 'Фикс', 'Начислено'].map(H),
+    ...pr.map((r) => [r.name, { v: r.n, t: 'num' }, { v: r.rev, t: 'money' }, r.st ? payText(r.st, true) : '', { v: r.pct, t: 'money' }, { v: r.fix, t: 'money' }, { v: r.pay, t: 'money', bold: true }]),
+    [{ v: 'ИТОГО', bold: true }, '', { v: rev, t: 'money', bold: true }, '', { v: sum(pr, (r) => r.pct), t: 'money', bold: true }, { v: sum(pr, (r) => r.fix), t: 'money', bold: true }, { v: payroll, t: 'money', bold: true }]];
   const tot = [['Показатель', 'Сумма'].map(H), ['Валовая выручка', { v: rev, t: 'money' }], ['Наличные', { v: sum(earn.filter((r) => r.method === 'cash')), t: 'money' }],
     ['Kaspi и карта', { v: sum(earn.filter((r) => r.method !== 'cash')), t: 'money' }], ['Расходы', { v: costs, t: 'money' }],
     [`Налог (${taxRate()}%), расчёт`, { v: tax, t: 'money' }], ['Налог уплачен', { v: taxPaid, t: 'money' }], ['Прибыль до ФОТ', { v: rev - costs - tax, t: 'money', bold: true }],
@@ -2283,7 +2332,7 @@ function exportAcc(earn, exp, pb) {
     { name: 'Итоги', widths: [30, 16], rows: tot },
     { name: 'Оплаты', widths: [12, 8, 18, 22, 22, 12, 14, 12, 12], rows: pays, filterTo: pays.length - 1 },
     { name: 'Расходы и налоги', widths: [12, 12, 36, 14, 12], rows: exps },
-    { name: 'Зарплата', widths: [24, 10, 15, 10, 15], rows: pay },
+    { name: 'Зарплата', widths: [22, 9, 14, 24, 13, 13, 14], rows: pay },
   ]);
   toast('Excel-файл скачан');
 }
@@ -2344,7 +2393,7 @@ async function renderHome() {
   const E = earn.filter(inP), X = exp.filter(inP);
   const rate = taxRate();
   const income = sum(E), cashI = sum(E.filter((x) => x.method === 'cash'));
-  const costs = sum(X.filter((x) => x.kind === 'expense')), payroll = sum(E, shareOf), tax = Math.round(income * rate / 100);
+  const costs = sum(X.filter((x) => x.kind === 'expense')), payroll = payrollTotal(E, r.from, r.to), tax = Math.round(income * rate / 100);
   const spend = costs + payroll + tax, profit = income - spend;
 
   // данные диаграммы по дням
@@ -2353,11 +2402,11 @@ async function renderHome() {
   const series = days.map((d) => {
     const e = earn.filter((x) => day(x) === d), x = exp.filter((y) => day(y) === d && y.kind === 'expense');
     const inc = sum(e);
-    return { d, inc, out: sum(x) + sum(e, shareOf) + Math.round(inc * rate / 100), n: e.length };
+    return { d, inc, out: sum(x) + sum(e, shareOf) + fixedForDay(d, e) + Math.round(inc * rate / 100), n: e.length };
   });
 
   // сотрудники и услуги за период
-  const staffRows = payrollRows(E).filter((x) => x.st || x.rev > 0);
+  const staffRows = payrollRows(E, r.from, r.to).filter((x) => x.st || x.rev > 0);
   const svcMap = new Map();
   for (const e of E) { const k = e.service_name || 'Без услуги'; const o = svcMap.get(k) || { name: k, n: 0, sum: 0 }; o.n++; o.sum += e.amount; svcMap.set(k, o); }
   const svcRows = [...svcMap.values()].sort((a, b) => b.sum - a.sum).slice(0, 6);
@@ -2384,7 +2433,7 @@ async function renderHome() {
     <div class="row between" style="margin:18px 0 8px"><h3 style="margin:0">Сотрудники · ${esc(r.label.toLowerCase())}</h3><a href="#staff" class="small"><b>Все ›</b></a></div>
     <div class="card" style="padding:6px 16px">${staffRows.length ? staffRows.map((x) => `<div class="kv home-row" ${x.st ? `data-st="${x.st.id}"` : ''}>
         <span class="row" style="gap:10px;flex-wrap:nowrap"><span class="avatar" style="width:34px;height:34px">${esc((x.name[0] || '?').toUpperCase())}</span>
-          <span><b>${esc(x.name)}</b><br><span class="muted small">${x.n} ${plural(x.n, 'визит', 'визита', 'визитов')}${x.st ? ` · ставка ${x.st.share_pct || 0}% · к выплате ${m0(x.pay)}` : ''}</span></span></span>
+          <span><b>${esc(x.name)}</b><br><span class="muted small">${x.n} ${plural(x.n, 'визит', 'визита', 'визитов')}${x.st ? ` · ${esc(payText(x.st, true) || 'оплата не задана')} · к выплате ${m0(x.pay)}` : ''}</span></span></span>
         <b>${m0(x.rev)}</b></div>`).join('') : '<div class="empty small">Добавьте сотрудников</div>'}</div>
     <div class="row between" style="margin:18px 0 8px"><h3 style="margin:0">Услуги · ${esc(r.label.toLowerCase())}</h3><a href="#services" class="small"><b>Все ›</b></a></div>
     <div class="card" style="padding:10px 16px">${svcRows.length ? svcRows.map((x) => `<div class="svc-row"><div class="row between"><span><b>${esc(x.name)}</b> <span class="muted small">× ${x.n}</span></span><b>${m0(x.sum)}</b></div>

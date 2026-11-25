@@ -1,7 +1,7 @@
 import {
   sb, $, $$, esc, money, durText, toastErr, phoneMask, normPhone, fmtPhone, todayInTz, addDays,
   isoWeekday, WD_SHORT, MONTHS_SHORT, humanDate, timeStrInTz, minutesInTz, pageUrl, store, telLink, brandify, prepayAmount, photoUrl,
-} from './lib.js?v=20261125g';
+} from './lib.js?v=20261125h';
 
 const slug = new URLSearchParams(location.search).get('b') || '';
 const app = $('#app');
