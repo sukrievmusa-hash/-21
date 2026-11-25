@@ -3,16 +3,20 @@ import {
   normPhone, fmtPhone, phoneMask, waLink, telLink, zonedToUtc, dateStrInTz, timeStrInTz, minutesInTz,
   todayInTz, addDays, isoWeekday, WD_SHORT, WD_FULL, humanDate, humanDateTime, fmtDateShort, minsToHHMM,
   durText, plural, statusBadge, STATUS, slugify, pageUrl, BRAND, INITIAL_HASH, photoUrl, resizeImage, STAFF_AUTH_KEY,
-} from './lib.js?v=20261125d';
-import { renderAuth, renderNewPassword } from './auth.js?v=20261125d';
-import { downloadXlsx } from './xlsx.js?v=20261125d';
+} from './lib.js?v=20261125e';
+import { renderAuth, renderNewPassword } from './auth.js?v=20261125e';
+import { downloadXlsx } from './xlsx.js?v=20261125e';
 
 const root = $('#root');
 const S = {
   user: null, biz: null, settings: {}, plans: [], staff: [], services: [], links: [], hours: [],
   day: null, view: store.get('kezek_view', 'list'), dayBookings: [], role: 'owner', mgr: null,
 };
-const TABS = [['journal', 'Главная'], ['clients', 'Клиенты'], ['acc', 'Бухгалтерия'], ['services', 'Услуги'], ['staff', 'Сотрудники'], ['settings', 'Настройки'], ['ai', 'ИИ-ассистент'], ['billing', 'Тарифы']];
+const TABS = [['home', 'Главная'], ['staff', 'Сотрудники'], ['services', 'Услуги'], ['journal', 'Журнал'], ['clients', 'Клиенты'], ['acc', 'Бухгалтерия'], ['settings', 'Настройки'], ['ai', 'ИИ-ассистент'], ['billing', 'Тарифы']];
+// Нижняя панель на телефоне: 4 главных раздела + «＋» по центру
+const BNAV = { owner: [['home', '🏠', 'Главная'], ['journal', '🗓', 'Журнал'], ['staff', '👥', 'Сотрудники'], ['more', '☰', 'Ещё']],
+  manager: [['journal', '🗓', 'Журнал'], ['clients', '👤', 'Клиенты'], ['services', '💈', 'Прайс'], ['more', '☰', 'Ещё']] };
+const ICON = { home: '🏠', staff: '👥', services: '💈', journal: '🗓', clients: '👤', acc: '📊', settings: '⚙️', ai: '🤖', billing: '💳' };
 const FIN_SUB = [['acc', 'Обзор'], ['payroll', 'Зарплата'], ['ledger', 'Проводки']];
 const MGR_TABS = [['journal', 'Журнал записей'], ['clients', 'Клиенты'], ['services', 'Прайс услуг']];
 const THEMES = [['graphite', 'Светлая (Графит)', '#18181b'], ['emerald', 'Изумрудная', '#116d5b'], ['dark', 'Тёмная', '#0f1115']];
@@ -190,7 +194,15 @@ function renderShell() {
       </div>
       <div class="container"><nav class="tabs">${tabsNow().map(([k, t]) => `<a class="tab" href="#${k}" data-t="${k}">${t}</a>`).join('')}</nav></div>
     </header>
-    <div class="container"><div id="banner" style="margin-top:14px"></div><main class="page" id="page"></main></div>`;
+    <div class="container"><div id="banner" style="margin-top:14px"></div><main class="page" id="page"></main></div>
+    <nav class="bnav" aria-label="Главное меню">${(() => {
+      const it = BNAV[S.role === 'manager' ? 'manager' : 'owner'];
+      const b = ([k, i, t]) => `<a href="#${k}" class="bn" data-bn="${k}"><span class="bi">${i}</span><span>${t}</span></a>`;
+      return b(it[0]) + b(it[1]) + '<button class="bn-plus" id="bnPlus" aria-label="Быстрые действия">＋</button>' + b(it[2]) + b(it[3]);
+    })()}</nav>`;
+  document.body.classList.add('has-bnav');
+  $('#bnPlus').onclick = () => actionSheet();
+  $$('.bn[data-bn="more"]').forEach((a) => { a.onclick = (e) => { e.preventDefault(); moreSheet(); }; });
   $('#logout').onclick = () => sb.auth.signOut();
   $('#shareBtn').onclick = () => shareModal();
   $('#themeBtn').onclick = () => cycleTheme();
@@ -200,12 +212,15 @@ function route() {
   let t = location.hash.slice(1);
   if (t === 'cash') t = S.role === 'manager' ? 'journal' : 'ledger';
   const sub = S.role !== 'manager' && (t === 'payroll' || t === 'ledger');
-  const tab = sub ? t : tabsNow().some(([k]) => k === t) ? t : 'journal';
+  const def = S.role === 'manager' ? 'journal' : 'home';
+  const tab = sub ? t : tabsNow().some(([k]) => k === t) ? t : def;
   const navTab = sub ? 'acc' : tab;
   $$('.tab').forEach((a) => a.classList.toggle('active', a.dataset.t === navTab));
+  const inBar = $$('.bn[data-bn]').some((a) => a.dataset.bn === navTab);
+  $$('.bn[data-bn]').forEach((a) => a.classList.toggle('on', a.dataset.bn === navTab || (!inBar && a.dataset.bn === 'more')));
   window.scrollTo(0, 0);
   renderBanner();
-  const fn = { journal: renderJournal, clients: renderClients, services: S.role === 'manager' ? renderPriceList : renderServices, staff: renderStaff, acc: renderAcc, payroll: renderPayroll, ledger: renderLedger, ai: renderAi, settings: renderSettings, billing: renderBilling }[tab];
+  const fn = { home: renderHome, journal: renderJournal, clients: renderClients, services: S.role === 'manager' ? renderPriceList : renderServices, staff: renderStaff, acc: renderAcc, payroll: renderPayroll, ledger: renderLedger, ai: renderAi, settings: renderSettings, billing: renderBilling }[tab];
   fn();
 }
 
@@ -306,15 +321,15 @@ function renderJournal() {
   const mgr = S.role === 'manager';
   if (JF.staff && !activeStaff().some((x) => x.id === JF.staff)) JF.staff = '';
   const stOpts = activeStaff().map((x) => `<option value="${x.id}" ${JF.staff === x.id ? 'selected' : ''}>${esc(x.name)}</option>`).join('');
-  $('#page').innerHTML = `${mgr ? mgrBadge() : checklistHtml()}
-    <div class="quick-btns" style="margin-bottom:12px">
+  $('#page').innerHTML = `${mgr ? mgrBadge() : ''}
+    <div class="quick-btns hide-phone" style="margin-bottom:12px">
       <button class="btn btn-pri btn-lg" data-q="walk">+ Без записи</button>
       <button class="btn" data-q="book">+ Запись</button>
       <button class="btn" data-q="batch">Списком</button>
       <button class="btn" data-q="exp">– Расход</button>
       <button class="btn" data-q="shift">🔒 Закрыть смену</button>
     </div>
-    <div class="card cash-card" id="cash" style="margin-bottom:14px"><div class="spinner"></div></div>
+    ${mgr ? '<div class="card cash-card" id="cash" style="margin-bottom:14px"><div class="spinner"></div></div>' : ''}
     <div class="day-bar">
       <button class="btn btn-sm" id="prev" aria-label="Предыдущий день">‹</button>
       <label class="day-title" id="dtl"><span id="dt"></span><input type="date" id="dpick" aria-label="Выбрать дату"></label>
@@ -2279,4 +2294,149 @@ function exportAcc(earn, exp, pb) {
     { name: 'Зарплата', widths: [24, 10, 15, 10, 15], rows: pay },
   ]);
   toast('Excel-файл скачан');
+}
+
+// =====================================================================
+//  Нижняя панель: «＋» и «Ещё»
+// =====================================================================
+function actionSheet() {
+  const acts = [['walk', '＋ Клиент без записи', 'сразу в кассу', 'btn-pri'], ['book', '🗓 Записать на время', 'по записи', ''], ['batch', '📝 Добавить списком', 'из тетради', ''],
+    ['exp', '➖ Расход', S.role === 'manager' ? 'из кассы' : 'или налог', ''], ['shift', '🔒 Закрыть смену', 'сверка кассы', '']];
+  const m = modal({
+    title: 'Быстрые действия',
+    body: `<div class="sheet">${acts.map(([k, t, d, c]) => `<button class="btn btn-block sheet-btn ${c}" data-a2="${k}"><b>${t}</b><span>${d}</span></button>`).join('')}</div>`,
+  });
+  const go = { walk: () => walkInModal(), book: () => bookingModal(null, { date: S.day || todayInTz(tz()) }), batch: () => { if (!S.day) S.day = todayInTz(tz()); batchModal(); }, exp: () => expenseModal('expense'), shift: () => shiftModal() };
+  $$('[data-a2]', m.el).forEach((b) => { b.onclick = () => { m.close(); go[b.dataset.a2](); }; });
+}
+function moreSheet() {
+  const shown = BNAV[S.role === 'manager' ? 'manager' : 'owner'].map(([k]) => k);
+  const rest = tabsNow().filter(([k]) => !shown.includes(k));
+  const th = THEMES.find(([k]) => k === document.documentElement.dataset.theme) || THEMES[0];
+  const m = modal({
+    title: S.role === 'manager' ? `Меню · ${S.mgr?.name || ''}` : 'Меню',
+    body: `<div class="more-grid">${rest.map(([k, t]) => `<a class="more-it" href="#${k}"><span class="bi">${ICON[k] || '•'}</span>${t}</a>`).join('')}
+        <button class="more-it" data-m="share"><span class="bi">🔗</span>Ссылка и QR</button>
+        <button class="more-it" data-m="theme"><span class="bi">🌓</span>Тема: ${esc(th[1])}</button></div>
+      <button class="btn btn-block" data-m="out" style="margin-top:12px">🚪 Выйти</button>`,
+  });
+  $$('a.more-it', m.el).forEach((a) => { a.onclick = () => m.close(); });
+  $('[data-m=share]', m.el).onclick = () => { m.close(); shareModal(); };
+  $('[data-m=theme]', m.el).onclick = () => { m.close(); cycleTheme(); };
+  $('[data-m=out]', m.el).onclick = () => { m.close(); sb.auth.signOut(); };
+}
+
+// =====================================================================
+//  Главная владельца: доходы, расходы, диаграмма → сотрудники → услуги
+// =====================================================================
+const HP = { p: store.get('jz_home_p', 'month') };
+function homeRange() {
+  const today = todayInTz(tz());
+  if (HP.p === 'today') return { from: today, to: today, chartFrom: addDays(today, -6), label: 'Сегодня', chartLabel: 'Последние 7 дней' };
+  if (HP.p === 'week') { const mon = addDays(today, -(isoWeekday(today) - 1)); return { from: mon, to: today, chartFrom: mon, label: 'Эта неделя', chartLabel: 'По дням недели' }; }
+  const ms = today.slice(0, 8) + '01';
+  return { from: ms, to: today, chartFrom: ms, label: 'Этот месяц', chartLabel: 'По дням месяца' };
+}
+async function renderHome() {
+  const r = homeRange();
+  $('#page').innerHTML = `<div class="seg seg3 home-seg">${[['today', 'Сегодня'], ['week', 'Неделя'], ['month', 'Месяц']].map(([k, t]) => `<button data-hp="${k}" class="${HP.p === k ? 'on' : ''}">${t}</button>`).join('')}</div>
+    <div id="homeBody"><div class="spinner"></div></div>`;
+  $$('[data-hp]').forEach((b) => { b.onclick = () => { HP.p = b.dataset.hp; store.set('jz_home_p', HP.p); renderHome(); }; });
+  const from = [r.from, r.chartFrom].sort()[0];
+  let earn, exp;
+  try { [earn, exp] = await Promise.all([fetchEarnings(from, r.to), fetchExpenses(from, r.to)]); }
+  catch (e) { $('#homeBody').innerHTML = `<div class="card empty">Не удалось загрузить: ${esc(errMsg(e))}<br><button class="btn btn-sm" onclick="location.reload()">Обновить</button></div>`; return; }
+  if (!$('#homeBody')) return;
+  const day = (x) => dateStrInTz(x.occurred_at, tz());
+  const inP = (x) => day(x) >= r.from && day(x) <= r.to;
+  const E = earn.filter(inP), X = exp.filter(inP);
+  const rate = taxRate();
+  const income = sum(E), cashI = sum(E.filter((x) => x.method === 'cash'));
+  const costs = sum(X.filter((x) => x.kind === 'expense')), payroll = sum(E, shareOf), tax = Math.round(income * rate / 100);
+  const spend = costs + payroll + tax, profit = income - spend;
+
+  // данные диаграммы по дням
+  const days = [];
+  for (let d = r.chartFrom; d <= r.to; d = addDays(d, 1)) days.push(d);
+  const series = days.map((d) => {
+    const e = earn.filter((x) => day(x) === d), x = exp.filter((y) => day(y) === d && y.kind === 'expense');
+    const inc = sum(e);
+    return { d, inc, out: sum(x) + sum(e, shareOf) + Math.round(inc * rate / 100), n: e.length };
+  });
+
+  // сотрудники и услуги за период
+  const staffRows = payrollRows(E).filter((x) => x.st || x.rev > 0);
+  const svcMap = new Map();
+  for (const e of E) { const k = e.service_name || 'Без услуги'; const o = svcMap.get(k) || { name: k, n: 0, sum: 0 }; o.n++; o.sum += e.amount; svcMap.set(k, o); }
+  const svcRows = [...svcMap.values()].sort((a, b) => b.sum - a.sum).slice(0, 6);
+  const maxSvc = Math.max(1, ...svcRows.map((x) => x.sum));
+  const walkIn = sum(E.filter((x) => !x.booking_id));
+
+  $('#homeBody').innerHTML = `
+    <div class="fin-cards">
+      <div class="card fin in"><div class="fin-l"><i class="dot" style="--c:var(--c-in)"></i>Доходы</div><div class="fin-v">${m0(income)}</div>
+        <div class="muted small">${E.length} ${plural(E.length, 'оплата', 'оплаты', 'оплат')} · нал ${m0(cashI)} · безнал ${m0(income - cashI)}</div></div>
+      <div class="card fin out"><div class="fin-l"><i class="dot" style="--c:var(--c-out)"></i>Расходы</div><div class="fin-v">${m0(spend)}</div>
+        <div class="muted small">расходы ${m0(costs)} · зарплата ${m0(payroll)} · налог ${rate}% ${m0(tax)}</div></div>
+      <div class="card fin pr"><div class="fin-l">Прибыль · ${esc(r.label.toLowerCase())}</div><div class="fin-v" style="color:${profit < 0 ? 'var(--danger)' : 'var(--ok)'}">${m0(profit)}</div>
+        <div class="muted small">доходы − расходы</div></div>
+    </div>
+    <div class="card" style="margin-top:12px">
+      <div class="row between" style="margin-bottom:4px"><h3 style="margin:0">Доходы и расходы</h3><span class="muted small">${esc(r.chartLabel)}</span></div>
+      <div class="legend-row"><span><i class="dot" style="--c:var(--c-in)"></i>Доходы</span><span><i class="dot" style="--c:var(--c-out)"></i>Расходы (с зарплатой и налогом)</span></div>
+      <div id="chart" class="chart"></div>
+      <details class="small" style="margin-top:6px"><summary class="muted">Таблица по дням</summary>
+        <table class="table" style="margin-top:6px"><thead><tr><th>День</th><th>Доходы</th><th>Расходы</th><th>Визитов</th></tr></thead><tbody>
+        ${series.slice().reverse().map((x) => `<tr><td>${esc(humanDate(x.d, false))}</td><td>${m0(x.inc)}</td><td>${m0(x.out)}</td><td>${x.n}</td></tr>`).join('')}</tbody></table></details>
+    </div>
+    <div class="row between" style="margin:18px 0 8px"><h3 style="margin:0">Сотрудники · ${esc(r.label.toLowerCase())}</h3><a href="#staff" class="small"><b>Все ›</b></a></div>
+    <div class="card" style="padding:6px 16px">${staffRows.length ? staffRows.map((x) => `<div class="kv home-row" ${x.st ? `data-st="${x.st.id}"` : ''}>
+        <span class="row" style="gap:10px;flex-wrap:nowrap"><span class="avatar" style="width:34px;height:34px">${esc((x.name[0] || '?').toUpperCase())}</span>
+          <span><b>${esc(x.name)}</b><br><span class="muted small">${x.n} ${plural(x.n, 'визит', 'визита', 'визитов')}${x.st ? ` · ставка ${x.st.share_pct || 0}% · к выплате ${m0(x.pay)}` : ''}</span></span></span>
+        <b>${m0(x.rev)}</b></div>`).join('') : '<div class="empty small">Добавьте сотрудников</div>'}</div>
+    <div class="row between" style="margin:18px 0 8px"><h3 style="margin:0">Услуги · ${esc(r.label.toLowerCase())}</h3><a href="#services" class="small"><b>Все ›</b></a></div>
+    <div class="card" style="padding:10px 16px">${svcRows.length ? svcRows.map((x) => `<div class="svc-row"><div class="row between"><span><b>${esc(x.name)}</b> <span class="muted small">× ${x.n}</span></span><b>${m0(x.sum)}</b></div>
+        <div class="svc-bar"><i style="width:${Math.max(2, x.sum / maxSvc * 100)}%"></i></div></div>`).join('') : '<div class="empty small">За период оплат нет — услуги появятся после первых оплат</div>'}
+      ${income ? `<div class="muted small" style="margin-top:6px">Без записи ${m0(walkIn)} · по записи ${m0(income - walkIn)}</div>` : ''}</div>
+    ${checklistHtml()}
+    <div class="more-grid" style="margin-top:16px">${[['journal', 'Журнал'], ['clients', 'Клиенты'], ['acc', 'Бухгалтерия']].map(([k, t]) => `<a class="more-it" href="#${k}"><span class="bi">${ICON[k]}</span>${t}</a>`).join('')}</div>`;
+  $('#hideOnb') && ($('#hideOnb').onclick = () => { onbFlag('hidden'); renderHome(); });
+  $$('[data-st]').forEach((el) => { el.style.cursor = 'pointer'; el.onclick = () => staffModal(S.staff.find((x) => x.id === el.dataset.st)); });
+  drawFinChart($('#chart'), series);
+}
+
+// Столбики «доход / расход» по дням — одна ось, подсказка при наведении/нажатии
+function drawFinChart(box, data) {
+  const W = Math.max(320, box.clientWidth || 600), H = 190, padL = 44, padB = 22, padT = 8;
+  const max = Math.max(1, ...data.map((x) => Math.max(x.inc, x.out)));
+  const nice = (() => { const p = Math.pow(10, Math.floor(Math.log10(max))); const k = max / p; return (k <= 1 ? 1 : k <= 2 ? 2 : k <= 5 ? 5 : 10) * p; })();
+  const cw = (W - padL) / data.length, bw = Math.max(2, Math.min(16, (cw - 6) / 2));
+  const y = (v) => padT + (H - padT - padB) * (1 - v / nice);
+  const short = (v) => (v >= 1e6 ? (v / 1e6).toFixed(v % 1e6 ? 1 : 0) + 'м' : v >= 1e3 ? Math.round(v / 1e3) + 'к' : String(v));
+  const bar = (x, v, cls) => { if (v <= 0) return ''; const top = y(v), h = H - padB - top; const r = Math.min(4, bw / 2, h);
+    return `<path class="${cls}" d="M${x},${H - padB} V${top + r} Q${x},${top} ${x + r},${top} H${x + bw - r} Q${x + bw},${top} ${x + bw},${top + r} V${H - padB} Z"/>`; };
+  const every = Math.ceil(data.length / 8);
+  let g = '';
+  for (let i = 0; i <= 2; i++) { const v = nice * i / 2; g += `<line class="grid" x1="${padL}" x2="${W}" y1="${y(v)}" y2="${y(v)}"/><text class="ax" x="${padL - 6}" y="${y(v) + 4}" text-anchor="end">${short(v)}</text>`; }
+  const cols = data.map((x, i) => {
+    const cx = padL + i * cw + cw / 2;
+    const lab = i % every === 0 || i === data.length - 1 ? `<text class="ax" x="${cx}" y="${H - 6}" text-anchor="middle">${+x.d.slice(8)}</text>` : '';
+    return `<g data-i="${i}">${bar(cx - bw - 1, x.inc, 'b-in')}${bar(cx + 1, x.out, 'b-out')}${lab}<rect class="hit" x="${padL + i * cw}" y="0" width="${cw}" height="${H - padB}"/></g>`;
+  }).join('');
+  box.innerHTML = `<svg viewBox="0 0 ${W} ${H}" width="100%" height="${H}" role="img" aria-label="Доходы и расходы по дням">${g}${cols}</svg><div class="tip hide"></div>`;
+  const tip = $('.tip', box);
+  const show = (i, ev) => {
+    const x = data[i];
+    tip.innerHTML = `<b>${esc(humanDate(x.d, false))}</b><div><i class="dot" style="--c:var(--c-in)"></i>Доходы ${m0(x.inc)}</div><div><i class="dot" style="--c:var(--c-out)"></i>Расходы ${m0(x.out)}</div><div class="muted">${x.n} ${plural(x.n, 'визит', 'визита', 'визитов')}</div>`;
+    tip.classList.remove('hide');
+    const rb = box.getBoundingClientRect();
+    const left = Math.min(rb.width - tip.offsetWidth - 4, Math.max(4, ev.clientX - rb.left - tip.offsetWidth / 2));
+    tip.style.left = left + 'px'; tip.style.top = '4px';
+    $$('g[data-i]', box).forEach((gg) => gg.classList.toggle('act', +gg.dataset.i === i));
+  };
+  $$('g[data-i]', box).forEach((gg) => {
+    gg.addEventListener('pointerenter', (e) => show(+gg.dataset.i, e));
+    gg.addEventListener('click', (e) => show(+gg.dataset.i, e));
+  });
+  box.addEventListener('pointerleave', () => { tip.classList.add('hide'); $$('g.act', box).forEach((gg) => gg.classList.remove('act')); });
 }
