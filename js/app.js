@@ -3,16 +3,17 @@ import {
   normPhone, fmtPhone, phoneMask, waLink, telLink, zonedToUtc, dateStrInTz, timeStrInTz, minutesInTz,
   todayInTz, addDays, isoWeekday, WD_SHORT, WD_FULL, humanDate, humanDateTime, fmtDateShort, minsToHHMM,
   durText, plural, statusBadge, STATUS, slugify, pageUrl, BRAND, INITIAL_HASH, photoUrl, resizeImage, STAFF_AUTH_KEY,
-} from './lib.js?v=20261125b';
-import { renderAuth, renderNewPassword } from './auth.js?v=20261125b';
-import { downloadXlsx } from './xlsx.js?v=20261125b';
+} from './lib.js?v=20261125d';
+import { renderAuth, renderNewPassword } from './auth.js?v=20261125d';
+import { downloadXlsx } from './xlsx.js?v=20261125d';
 
 const root = $('#root');
 const S = {
   user: null, biz: null, settings: {}, plans: [], staff: [], services: [], links: [], hours: [],
   day: null, view: store.get('kezek_view', 'list'), dayBookings: [], role: 'owner', mgr: null,
 };
-const TABS = [['journal', 'Главная'], ['acc', 'Бухгалтерия'], ['payroll', 'Зарплата'], ['ledger', 'Проводки'], ['clients', 'Клиенты'], ['services', 'Услуги'], ['staff', 'Сотрудники'], ['billing', 'Тарифы'], ['settings', 'Настройки'], ['ai', 'ИИ-ассистент']];
+const TABS = [['journal', 'Главная'], ['clients', 'Клиенты'], ['acc', 'Бухгалтерия'], ['services', 'Услуги'], ['staff', 'Сотрудники'], ['settings', 'Настройки'], ['ai', 'ИИ-ассистент'], ['billing', 'Тарифы']];
+const FIN_SUB = [['acc', 'Обзор'], ['payroll', 'Зарплата'], ['ledger', 'Проводки']];
 const MGR_TABS = [['journal', 'Журнал записей'], ['clients', 'Клиенты'], ['services', 'Прайс услуг']];
 const THEMES = [['graphite', 'Светлая (Графит)', '#18181b'], ['emerald', 'Изумрудная', '#116d5b'], ['dark', 'Тёмная', '#0f1115']];
 function applyTheme(t) { document.documentElement.dataset.theme = t; store.set('jz_theme', t); }
@@ -185,8 +186,7 @@ function renderShell() {
         <span class="biz grow" id="bizName">${esc(S.biz.name)}${S.role === 'manager' ? ` · <span class="muted">менеджер ${esc(S.mgr.name)}</span>` : ''}</span>
         <button class="btn btn-sm" id="themeBtn" title="Оформление: светлая, изумрудная, тёмная">🌓</button>
         <button class="btn btn-sm" id="shareBtn" title="Ссылка для записи, QR-код, отправить клиентам">🔗<span class="lbl-lg"> Ссылка и QR</span></button>
-        <button class="btn btn-sm btn-pri" id="walkBtn" title="Клиент без записи — сразу в кассу">+<span class="lbl-lg"> Без записи</span><span class="lbl-sm"> Касса</span></button>
-        <button class="btn btn-sm btn-ghost" id="logout" title="Выйти"><span class="lbl-lg">Выйти</span><span class="lbl-sm">⎋</span></button>
+        <button class="btn btn-sm" id="logout" title="Выйти">🚪<span class="lbl-lg"> Выйти</span></button>
       </div>
       <div class="container"><nav class="tabs">${tabsNow().map(([k, t]) => `<a class="tab" href="#${k}" data-t="${k}">${t}</a>`).join('')}</nav></div>
     </header>
@@ -194,14 +194,16 @@ function renderShell() {
   $('#logout').onclick = () => sb.auth.signOut();
   $('#shareBtn').onclick = () => shareModal();
   $('#themeBtn').onclick = () => cycleTheme();
-  $('#walkBtn').onclick = () => walkInModal();
 }
 
 function route() {
   let t = location.hash.slice(1);
   if (t === 'cash') t = S.role === 'manager' ? 'journal' : 'ledger';
-  const tab = tabsNow().some(([k]) => k === t) ? t : 'journal';
-  $$('.tab').forEach((a) => a.classList.toggle('active', a.dataset.t === tab));
+  const sub = S.role !== 'manager' && (t === 'payroll' || t === 'ledger');
+  const tab = sub ? t : tabsNow().some(([k]) => k === t) ? t : 'journal';
+  const navTab = sub ? 'acc' : tab;
+  $$('.tab').forEach((a) => a.classList.toggle('active', a.dataset.t === navTab));
+  window.scrollTo(0, 0);
   renderBanner();
   const fn = { journal: renderJournal, clients: renderClients, services: S.role === 'manager' ? renderPriceList : renderServices, staff: renderStaff, acc: renderAcc, payroll: renderPayroll, ledger: renderLedger, ai: renderAi, settings: renderSettings, billing: renderBilling }[tab];
   fn();
@@ -302,35 +304,30 @@ const JF = { staff: store.get('jz_jf_staff', ''), status: 'all' };
 function renderJournal() {
   if (!S.day) S.day = todayInTz(tz());
   const mgr = S.role === 'manager';
+  if (JF.staff && !activeStaff().some((x) => x.id === JF.staff)) JF.staff = '';
   const stOpts = activeStaff().map((x) => `<option value="${x.id}" ${JF.staff === x.id ? 'selected' : ''}>${esc(x.name)}</option>`).join('');
   $('#page').innerHTML = `${mgr ? mgrBadge() : checklistHtml()}
-    <div class="card" style="margin-bottom:12px">
-      <div class="row between" style="margin-bottom:10px"><b>Быстрый ввод</b>${mgr ? '<span class="muted small">запись, оплата, сверка смены</span>' : '<a href="#acc" class="small"><b>Бухгалтерия ›</b></a>'}</div>
-      <div class="quick-btns">
-        <button class="btn btn-pri" data-q="walk">+ Без записи</button>
-        <button class="btn" data-q="book">По записи</button>
-        <button class="btn" data-q="batch">Списком</button>
-        <button class="btn" data-q="exp">– Расход</button>
-        <button class="btn" data-q="shift">🔒 Закрыть смену</button>
-      </div></div>
-    <div class="grid grid-4 keep-2" id="cashKpi" style="margin-bottom:10px"></div>
-    <div class="card cash-extra small" id="cashExtra" style="margin-bottom:14px"><div class="spinner"></div></div>
-    ${mgr ? '' : shareBarHtml()}
-    <div class="page-h">
-      <div class="day-nav">
-        <button class="btn btn-sm" id="prev" aria-label="Предыдущий день">‹</button>
-        <div class="day-title" id="dt"></div>
-        <button class="btn btn-sm" id="next" aria-label="Следующий день">›</button>
-        <button class="btn btn-sm btn-ghost" id="today">Сегодня</button>
-        <input type="date" class="input input-sm" id="dpick" style="width:auto">
-      </div>
-      <div class="seg" style="margin:0"><button data-v="list">Список</button><button data-v="grid">Сетка</button></div>
+    <div class="quick-btns" style="margin-bottom:12px">
+      <button class="btn btn-pri btn-lg" data-q="walk">+ Без записи</button>
+      <button class="btn" data-q="book">+ Запись</button>
+      <button class="btn" data-q="batch">Списком</button>
+      <button class="btn" data-q="exp">– Расход</button>
+      <button class="btn" data-q="shift">🔒 Закрыть смену</button>
+    </div>
+    <div class="card cash-card" id="cash" style="margin-bottom:14px"><div class="spinner"></div></div>
+    <div class="day-bar">
+      <button class="btn btn-sm" id="prev" aria-label="Предыдущий день">‹</button>
+      <label class="day-title" id="dtl"><span id="dt"></span><input type="date" id="dpick" aria-label="Выбрать дату"></label>
+      <button class="btn btn-sm" id="next" aria-label="Следующий день">›</button>
+      <button class="btn btn-sm btn-ghost" id="today">Сегодня</button>
+      <span class="grow"></span>
+      <div class="seg seg-sm"><button data-v="list" title="Список">☰</button><button data-v="grid" title="Сетка по мастерам">▦</button></div>
     </div>
     <div class="row filters">
-      <select class="select" id="mf"><option value="">Все мастера</option>${stOpts}</select>
-      <div class="chips">${[['all', 'Все'], ['booked', 'По записи'], ['paid', 'Оплачено'], ['noshow', 'Не пришёл']].map(([k, t]) => `<button class="chip ${JF.status === k ? 'on' : ''}" data-sf="${k}">${t}</button>`).join('')}</div>
+      ${activeStaff().length > 1 ? `<select class="select select-sm" id="mf"><option value="">Все мастера</option>${stOpts}</select>` : ''}
+      <div class="chips">${[['all', 'Все'], ['booked', 'Ждём'], ['paid', 'Оплачено'], ['noshow', 'Не пришёл']].map(([k, t]) => `<button class="chip ${JF.status === k ? 'on' : ''}" data-sf="${k}">${t}</button>`).join('')}</div>
     </div>
-    <div class="grid grid-4 keep-2" id="kpi" style="margin-bottom:14px"></div>
+    <div class="muted small" id="daySum" style="margin:-4px 0 10px"></div>
     <div id="jr"><div class="spinner"></div></div>`;
   $('#hideOnb') && ($('#hideOnb').onclick = () => { onbFlag('hidden'); renderJournal(); });
   bindShareBar();
@@ -341,7 +338,7 @@ function renderJournal() {
   $('#today').onclick = () => { S.day = todayInTz(tz()); drawDay(); };
   $('#dpick').onchange = (e) => { if (e.target.value) { S.day = e.target.value; drawDay(); } };
   $$('[data-v]').forEach((b) => { b.onclick = () => { S.view = b.dataset.v; store.set('kezek_view', S.view); drawDay(); }; });
-  $('#mf').onchange = (e) => { JF.staff = e.target.value; store.set('jz_jf_staff', JF.staff); drawDay(); };
+  $('#mf') && ($('#mf').onchange = (e) => { JF.staff = e.target.value; store.set('jz_jf_staff', JF.staff); drawDay(); });
   $$('[data-sf]').forEach((b) => { b.onclick = () => { JF.status = b.dataset.sf; $$('[data-sf]').forEach((x) => x.classList.toggle('on', x === b)); drawDay(); }; });
   drawCashKpi();
   drawDay();
@@ -349,8 +346,10 @@ function renderJournal() {
 
 async function drawDay() {
   const day = S.day;
-  $('#dt').textContent = `${capital(WD_FULL[isoWeekday(day)])}, ${humanDate(day, false)}`;
+  const tdy = todayInTz(tz());
+  $('#dt').textContent = `${day === tdy ? 'Сегодня' : day === addDays(tdy, 1) ? 'Завтра' : day === addDays(tdy, -1) ? 'Вчера' : capital(WD_SHORT[isoWeekday(day)])}, ${humanDate(day, false)}`;
   $('#dpick').value = day;
+  $('#today').classList.toggle('hide', day === tdy);
   $$('[data-v]').forEach((b) => b.classList.toggle('on', b.dataset.v === S.view));
   const from = zonedToUtc(day, '00:00', tz()).toISOString(), to = zonedToUtc(addDays(day, 1), '00:00', tz()).toISOString();
   const [bq, eq] = await Promise.all([
@@ -373,12 +372,9 @@ async function drawDay() {
   if (S.day !== day || !$('#jr')) return;
   const act = data.filter((b) => b.status !== 'cancelled');
   const walk = S.dayEarn.filter((e) => !e.booking_id);
-  $('#kpi').innerHTML = [
-    [act.length, plural(act.length, 'запись', 'записи', 'записей')],
-    [walk.length, 'без записи'],
-    [money(act.reduce((a, b) => a + (b.status !== 'no_show' ? b.price || 0 : 0), 0)) || '0 ₸', 'ожидалось по записям'],
-    [data.filter((b) => b.status === 'cancelled').length + ' / ' + act.filter((b) => b.status === 'no_show').length, 'отмен / неявок'],
-  ].map(([v, l]) => `<div class="card stat flat"><div class="v">${v}</div><div class="l">${l}</div></div>`).join('');
+  const ns = act.filter((b) => b.status === 'no_show').length, cn = data.length - act.length;
+  $('#daySum').textContent = [`${act.length} ${plural(act.length, 'запись', 'записи', 'записей')}`, walk.length ? `${walk.length} без записи` : '',
+    ns ? `неявок ${ns}` : '', cn ? `отмен ${cn}` : ''].filter(Boolean).join(' · ');
   const isPaid = (b) => S.paid.has(b.id) || b.status === 'done';
   const okStaff = (id) => !JF.staff || id === JF.staff;
   const okStatus = (b) => JF.status === 'all' || (JF.status === 'paid' && isPaid(b))
@@ -460,7 +456,7 @@ function drawList(items, walks = []) {
   const rows = [...items.map((b) => ({ t: b.starts_at, b })), ...walks.map((e) => ({ t: e.occurred_at, e }))]
     .sort((a, b) => new Date(a.t) - new Date(b.t));
   if (!rows.length) {
-    box.innerHTML = `<div class="card empty"><div class="ico">🗓</div>${JF.status !== 'all' || JF.staff ? 'По выбранному фильтру записей нет' : 'На этот день записей нет'}
+    box.innerHTML = `<div class="card empty"><div class="ico">🗓</div>${JF.status !== 'all' || JF.staff ? 'По выбранному фильтру ничего нет' : 'На этот день записей нет'}
       <div style="margin-top:10px"><button class="btn btn-pri btn-sm" id="emptyAdd">+ Записать клиента</button></div></div>`;
     $('#emptyAdd').onclick = () => bookingModal(null, { date: S.day, staff_id: JF.staff || undefined });
     return;
@@ -470,24 +466,26 @@ function drawList(items, walks = []) {
     if (r.e) {
       const e = r.e;
       return `<div class="bk-card walk" data-e="${e.id}"><div class="bk-main">
-        <div class="grow" data-open><b>${timeStrInTz(e.occurred_at, tz())} · ${esc(e.client_name || 'Гость')} <span class="muted small">(без записи)</span></b>
-          <div class="muted small">${[e.staff_name, e.service_name, money(e.amount)].filter(Boolean).map(esc).join(' · ')}</div></div>
+        <div class="grow" data-open><b>${timeStrInTz(e.occurred_at, tz())} · ${esc(e.client_name || 'Гость')}</b>
+          <div class="muted small">без записи · ${[e.staff_name, e.service_name, money(e.amount)].filter(Boolean).map(esc).join(' · ')}</div></div>
         <span class="badge b-done">Оплачено · ${PAY[e.method] || e.method}</span>${owner ? '<button class="x" data-x="delE" title="Удалить оплату">✕</button>' : ''}</div></div>`;
     }
     const b = r.b, e = S.paid.get(b.id), paid = !!e || b.status === 'done', cancelled = b.status === 'cancelled';
     const badge = paid ? `<span class="badge b-done">Оплачено${e ? ' · ' + (PAY[e.method] || '') : ''}</span>` : statusBadge(b.status);
-    const open = ['booked', 'confirmed'].includes(b.status) && !paid;
+    const started = new Date(b.starts_at) <= new Date();
+    const notFuture = dateStrInTz(b.starts_at, tz()) <= todayInTz(tz());
+    const open = ['booked', 'confirmed'].includes(b.status) && !paid && started;
     return `<div class="bk-card ${cancelled ? 'cancelled' : ''}" data-id="${b.id}"><div class="bk-main">
         <div class="grow" data-open><b>${timeStrInTz(b.starts_at, tz())} · ${esc(b.client_name)}</b>
           <div class="muted small">${[b.staff_name, b.service_name, b.price != null ? money(b.price) : '', b.source === 'online' ? 'онлайн' : ''].filter(Boolean).map(esc).join(' · ')}</div>
           ${b.comment ? `<div class="small">💬 ${esc(b.comment)}</div>` : ''}</div>
         ${badge}${cancelled || paid ? '' : '<button class="x" data-x="cancel" title="Отменить запись">✕</button>'}</div>
       ${cancelled ? '' : `<div class="bk-act">
-        <a class="btn btn-sm" href="${telLink(b.client_phone)}">Позвонить</a>
-        <a class="btn btn-sm btn-wa" target="_blank" rel="noopener" href="${esc(waLink(b.client_phone, reminderText(b)))}">WhatsApp</a>
+        <a class="btn btn-sm" href="${telLink(b.client_phone)}">📞</a>
+        <a class="btn btn-sm btn-wa" target="_blank" rel="noopener" href="${esc(waLink(b.client_phone, reminderText(b)))}" title="Напомнить в WhatsApp">WhatsApp</a>
         ${paid ? '' : '<button class="btn btn-sm" data-x="move">Перенести</button>'}
         ${open ? '<button class="btn btn-sm" data-x="noshow">Не пришёл</button>' : ''}
-        ${paid ? '' : '<button class="btn btn-sm btn-pri" data-x="pay">Оплатил</button>'}</div>`}</div>`;
+        ${paid || !notFuture ? '' : '<button class="btn btn-sm btn-pri" data-x="pay">Оплатил</button>'}</div>`}</div>`;
   }).join('')}</div>`;
   const setStatus = async (b, status, msg) => {
     const { error } = await sb.from('bookings').update({ status }).eq('id', b.id);
@@ -562,7 +560,7 @@ function bookingModal(b, pre = {}) {
   </form>`;
   const footer = `${!isNew && b.status !== 'cancelled' ? '<button class="btn btn-danger" data-a="cancel">Отменить запись</button>' : ''}
     ${!isNew && b.status === 'cancelled' ? '<button class="btn" data-a="restore">Восстановить</button>' : ''}
-    ${!isNew && b.status !== 'cancelled' ? '<button class="btn" data-a="pay">💰 Оплатил</button>' : ''}
+    ${!isNew && b.status !== 'cancelled' && dateStrInTz(b.starts_at, tz()) <= todayInTz(tz()) ? '<button class="btn" data-a="pay">💰 Оплатил</button>' : ''}
     <button class="btn" data-a="close">Закрыть</button><button class="btn btn-pri" data-a="save">${isNew ? 'Записать' : 'Сохранить'}</button>`;
   const m = modal({ title: isNew ? 'Новая запись' : 'Запись', body, footer });
   const payBtn = $('[data-a=pay]', m.el);
@@ -1950,6 +1948,7 @@ function batchModal() {
       try {
         const tm = line.match(/^(\d{1,2})[:.](\d{2})\s+(.+)$/);
         if (!tm) throw new Error('нет времени в начале (например 16:00)');
+        if (+tm[1] > 23 || +tm[2] > 59) throw new Error('неверное время');
         const time = `${tm[1].padStart(2, '0')}:${tm[2]}`;
         let rest = tm[3];
         const ph = rest.match(/(\+?\d[\d\s()-]{8,}\d)/);
@@ -2056,38 +2055,37 @@ async function shiftModal() {
 
 // Касса на главной
 async function drawCashKpi() {
-  const kpi = $('#cashKpi'), ex = $('#cashExtra');
-  if (!kpi) return;
+  const box = $('#cash');
+  if (!box) return;
   const today = todayInTz(tz());
-  const card = (v, l, sub) => `<div class="card stat"><div class="l">${l}</div><div class="v">${v}</div><div class="l">${sub}</div></div>`;
   const visits = (n) => `${n} ${plural(n, 'визит', 'визита', 'визитов')}`;
   try {
     if (S.role === 'manager') {
       const [earn, exp, cl] = await Promise.all([fetchEarnings(today, today), fetchExpenses(today, today), fetchClosings(today, today)]);
-      if (!$('#cashKpi')) return;
+      if (!$('#cash')) return;
       const t = sum(earn), cash = sum(earn.filter((r) => r.method === 'cash')), costs = sum(exp);
-      kpi.innerHTML = card(m0(t), 'Касса сегодня', visits(earn.length)) + card(m0(cash), '💵 Наличные', 'за смену')
-        + card(m0(t - cash), '📱 Kaspi и карта', 'за смену') + card(m0(cash - costs), 'В кассе', `расходы ${m0(costs)}`);
-      ex.innerHTML = `<div>Режим менеджера: запись клиентов, приём оплат и сверка смены.</div>
-        ${cl.length ? `<div>🔒 Смена закрыта в ${hhmm(cl[0].created_at)} на ${m0(cl[0].gross)}. Новые оплаты можно добавлять и закрыть смену ещё раз.</div>` : ''}`;
+      box.innerHTML = `<div class="cash-top"><div><div class="muted small">Касса сегодня</div><div class="cash-big">${m0(t)}</div><div class="muted small">${visits(earn.length)}</div></div>
+          <div class="cash-mini"><div><span>Наличные</span><b>${m0(cash)}</b></div><div><span>Kaspi и карта</span><b>${m0(t - cash)}</b></div>
+          <div><span>Расходы</span><b>${m0(costs)}</b></div><div><span>В кассе нал.</span><b>${m0(cash - costs)}</b></div></div></div>
+        ${cl.length ? `<div class="muted small" style="margin-top:8px">🔒 Смена закрыта в ${hhmm(cl[0].created_at)} на ${m0(cl[0].gross)}. Можно принимать оплаты и закрыть ещё раз.</div>` : ''}`;
       return;
     }
     const mon = addDays(today, -(isoWeekday(today) - 1)), ms = today.slice(0, 8) + '01', yd = addDays(today, -1);
     const from = [mon, ms, yd].sort()[0];
     const [earn, exp] = await Promise.all([fetchEarnings(from, today), fetchExpenses(today, today)]);
-    if (!$('#cashKpi')) return;
+    if (!$('#cash')) return;
     const d = (r) => dateStrInTz(r.occurred_at, tz());
     const pick = (a, b) => earn.filter((r) => d(r) >= a && d(r) <= b);
     const T = pick(today, today), Y = pick(yd, yd), W = pick(mon, today), M = pick(ms, today);
-    kpi.innerHTML = card(m0(sum(T)), 'Касса сегодня', visits(T.length)) + card(m0(sum(Y)), 'Вчера', visits(Y.length))
-      + card(m0(sum(W)), 'За неделю', visits(W.length)) + card(m0(sum(M)), 'За месяц', visits(M.length));
     const costs = sum(exp.filter((x) => x.kind === 'expense'));
     const net = sum(T) - costs - sum(T, shareOf) - Math.round(sum(T) * taxRate() / 100);
     const cashT = sum(T.filter((r) => r.method === 'cash'));
-    ex.innerHTML = `<div class="row"><span>Чистыми владельцу за сегодня:</span><b>${m0(net)}</b></div>
-      <div class="row"><span>Без записи / По записи (мес.):</span><b>${m0(sum(M.filter((r) => !r.booking_id)))} / ${m0(sum(M.filter((r) => r.booking_id)))}</b></div>
-      <div class="row"><span>Наличные / Kaspi и карта за смену:</span><b>${m0(cashT)} / ${m0(sum(T) - cashT)}</b></div>`;
-  } catch (e) { ex.innerHTML = `<span class="muted">Касса не загрузилась: ${esc(errMsg(e))}</span>`; }
+    box.innerHTML = `<div class="cash-top"><div><div class="muted small">Касса сегодня</div><div class="cash-big">${m0(sum(T))}</div>
+          <div class="muted small">${visits(T.length)} · нал ${m0(cashT)} · безнал ${m0(sum(T) - cashT)}</div></div>
+        <div class="cash-mini"><div><span>Вчера</span><b>${m0(sum(Y))}</b></div><div><span>Неделя</span><b>${m0(sum(W))}</b></div>
+          <div><span>Месяц</span><b>${m0(sum(M))}</b></div><div><span>Чистыми сегодня</span><b>${m0(net)}</b></div></div></div>
+      <a href="#acc" class="small" style="display:inline-block;margin-top:8px">Подробно в «Бухгалтерии» ›</a>`;
+  } catch (e) { box.innerHTML = `<span class="muted">Касса не загрузилась: ${esc(errMsg(e))}</span>`; }
 }
 
 // ---------- Финансы владельца: общий выбор периода ----------
@@ -2106,6 +2104,10 @@ function periodBar(rerender) {
   };
   return { html, bind, from, to, label };
 }
+function finNav(cur) {
+  return `<div class="seg seg3" style="margin-bottom:14px">${FIN_SUB.map(([k, t]) => `<button data-fin="${k}" class="${k === cur ? 'on' : ''}">${t}</button>`).join('')}</div>`;
+}
+function bindFinNav() { $$('[data-fin]').forEach((b) => { b.onclick = () => { location.hash = b.dataset.fin; }; }); }
 function payrollRows(earn) {
   const map = new Map();
   for (const e of earn) {
@@ -2120,10 +2122,10 @@ function payrollRows(earn) {
 // ---------- Бухгалтерия ----------
 async function renderAcc() {
   const pb = periodBar(renderAcc);
-  $('#page').innerHTML = `<div class="page-h"><div><h2 style="margin:0">Бухгалтерский учёт</h2></div>
+  $('#page').innerHTML = `${finNav('acc')}<div class="page-h"><div><h2 style="margin:0">Бухгалтерский учёт</h2></div>
       <span class="row" style="gap:8px;flex-wrap:wrap"><button class="btn btn-sm" id="addX">– Расход / Налог</button><button class="btn btn-sm" id="shiftB">Сверка смены</button><button class="btn btn-sm btn-pri" id="xl">⬇️ Скачать Excel</button></span></div>
     ${pb.html}<div id="accBody"><div class="spinner"></div></div>`;
-  pb.bind();
+  pb.bind(); bindFinNav();
   $('#addX').onclick = () => expenseModal('expense');
   $('#shiftB').onclick = () => shiftModal();
   let earn, exp, closings;
@@ -2165,8 +2167,8 @@ async function renderAcc() {
 // ---------- Зарплата мастеров ----------
 async function renderPayroll() {
   const pb = periodBar(renderPayroll);
-  $('#page').innerHTML = `<div class="page-h"><h2>Зарплата мастеров</h2><span id="payTot" class="muted"></span></div>${pb.html}<div id="payBody"><div class="spinner"></div></div>`;
-  pb.bind();
+  $('#page').innerHTML = `${finNav('payroll')}<div class="page-h"><h2>Зарплата мастеров</h2><span id="payTot" class="muted"></span></div>${pb.html}<div id="payBody"><div class="spinner"></div></div>`;
+  pb.bind(); bindFinNav();
   let earn;
   try { earn = await fetchEarnings(pb.from, pb.to); } catch (e) { $('#payBody').innerHTML = `<div class="empty">${esc(errMsg(e))}</div>`; return; }
   if (!$('#payBody')) return;
@@ -2186,14 +2188,14 @@ async function renderPayroll() {
 const LG = { cat: '', staff: '' };
 async function renderLedger() {
   const pb = periodBar(renderLedger);
-  $('#page').innerHTML = `<div class="page-h"><h2>Журнал проводок</h2>
+  $('#page').innerHTML = `${finNav('ledger')}<div class="page-h"><h2>Журнал проводок</h2>
       <span class="row" style="gap:8px;flex-wrap:wrap"><button class="btn btn-sm btn-pri" id="addL">+ Проводка</button><button class="btn btn-sm" id="xl">⬇️ Excel</button></span></div>
     ${pb.html}
     <div class="row filters"><select class="select" id="lc"><option value="">Все статьи</option><option value="income">Приход (выручка)</option><option value="expense">Расходы</option><option value="tax">Налоги</option></select>
       <select class="select" id="ls"><option value="">Все мастера</option>${S.staff.map((x) => `<option value="${x.id}">${esc(x.name)}</option>`).join('')}</select></div>
     <div id="lgTot" class="grid grid-4 keep-2" style="margin-bottom:12px"></div>
     <div id="lgBody"><div class="spinner"></div></div>`;
-  pb.bind();
+  pb.bind(); bindFinNav();
   $('#lc').value = LG.cat; $('#ls').value = LG.staff;
   $('#addL').onclick = () => {
     const m = modal({ title: 'Новая проводка', body: `<div class="stack"><button class="btn btn-block" data-k="income">+ Приход (оплата клиента)</button>
