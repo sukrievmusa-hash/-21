@@ -1,5 +1,5 @@
 // Экран входа/регистрации — общий для кабинета и админки
-import { sb, $, $$, esc, toast, toastErr, BRAND } from './lib.js?v=20261125e';
+import { sb, $, $$, esc, toast, toastErr, BRAND } from './lib.js?v=20261125f';
 
 export function renderAuth(root, { mode = 'login', onDone, allowSignup = true, title } = {}) {
   root.innerHTML = `<div class="auth-wrap"><div class="auth-card">
