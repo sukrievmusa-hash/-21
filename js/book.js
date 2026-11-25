@@ -1,11 +1,13 @@
 import {
   sb, $, $$, esc, money, durText, toastErr, phoneMask, normPhone, fmtPhone, todayInTz, addDays,
   isoWeekday, WD_SHORT, MONTHS_SHORT, humanDate, timeStrInTz, minutesInTz, pageUrl, store, telLink, brandify, prepayAmount, photoUrl,
-} from './lib.js?v=20261125i';
+} from './lib.js?v=20261125j';
 
-const slug = new URLSearchParams(location.search).get('b') || '';
+const qs = new URLSearchParams(location.search);
+const slug = qs.get('b') || '';
+const OTHER = 'Другое';
 const app = $('#app');
-const S = { biz: null, service: null, staffId: null, staffChosen: false, day: null, slot: null, freeDays: null };
+const S = { biz: null, section: null, service: null, staffId: null, staffChosen: false, day: null, slot: null, freeDays: null };
 
 brandify();
 init();
@@ -27,7 +29,36 @@ async function init() {
     app.innerHTML = `<div class="empty"><div class="ico">🗓</div><h3>Скоро здесь появится запись</h3><p>Бизнес ещё добавляет услуги.</p></div>`;
     return;
   }
+  const want = (qs.get('c') || '').trim().toLowerCase();
+  if (want) S.section = sections().find((x) => x.toLowerCase() === want) || null;
   stepService();
+}
+
+// Разделы услуг («💈 Барбершоп», «💅 Маникюр»). Услуги без раздела — в «Другое», если есть хотя бы два раздела.
+function sections() {
+  const out = [];
+  for (const s of S.biz.services) { const k = s.section || OTHER; if (!out.includes(k)) out.push(k); }
+  if (out.length === 1 && out[0] === OTHER) return [];
+  return out.length >= 2 ? out.filter((x) => x !== OTHER).concat(out.includes(OTHER) ? [OTHER] : []) : out.filter((x) => x !== OTHER);
+}
+const inSection = (s) => !S.section || (s.section || OTHER) === S.section;
+
+function stepSection() {
+  const list = sections();
+  app.innerHTML = `${bar(1)}<h2>Что вас интересует?</h2><div class="sec-grid" id="secs"></div>${galleryHtml()}`;
+  bindGallery();
+  const box = $('#secs');
+  for (const name of list) {
+    const sv = S.biz.services.filter((x) => (x.section || OTHER) === name);
+    const prices = sv.map((x) => x.price).filter((x) => x != null);
+    const ph = sv.find((x) => x.photo);
+    const btn = document.createElement('button');
+    btn.className = 'sec-tile';
+    btn.innerHTML = `${ph ? `<img src="${esc(photoUrl(ph.photo))}" alt="" loading="lazy">` : ''}<div class="sec-txt"><b>${esc(name)}</b>
+      <span>${sv.length} ${sv.length % 10 === 1 && sv.length % 100 !== 11 ? 'услуга' : sv.length % 10 >= 2 && sv.length % 10 <= 4 && (sv.length % 100 < 12 || sv.length % 100 > 14) ? 'услуги' : 'услуг'}${prices.length ? ` · от ${money(Math.min(...prices))}` : ''}</span></div><span class="sec-go">›</span>`;
+    btn.onclick = () => { S.section = name; stepService(); };
+    box.append(btn);
+  }
 }
 
 function fatal(title, text) {
@@ -95,10 +126,14 @@ function stepService() {
   S.service = null; S.staffChosen = false; S.slot = null;
   const pp = S.biz.prepay_enabled
     ? `<div class="alert alert-info" style="margin-bottom:12px">💳 Запись по предоплате ${S.biz.prepay_percent}% от стоимости услуги</div>` : '';
-  app.innerHTML = `${bar(1)}<h2>Выберите услугу</h2>${pp}<div id="list"></div>${galleryHtml()}`;
+  const secs = sections();
+  if (secs.length >= 2 && !S.section) return stepSection();
+  app.innerHTML = `${bar(1)}<h2>${S.section && secs.length >= 2 ? esc(S.section) : 'Выберите услугу'}</h2>${pp}<div id="list"></div>
+    ${secs.length >= 2 ? '<div class="row" style="margin-top:14px"><button class="btn btn-ghost" id="toSecs">← Все разделы</button></div>' : ''}${galleryHtml()}`;
   bindGallery();
+  if ($('#toSecs')) $('#toSecs').onclick = () => { S.section = null; S.service = null; stepSection(); };
   const list = $('#list');
-  for (const s of S.biz.services) {
+  for (const s of S.biz.services.filter(inSection)) {
     const btn = document.createElement('button');
     btn.className = 'opt';
     btn.innerHTML = `${s.photo ? `<img class="opt-ph" src="${esc(photoUrl(s.photo))}" alt="" loading="lazy">` : ''}<div class="grow"><b>${esc(s.name)}</b>

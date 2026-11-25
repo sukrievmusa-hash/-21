@@ -3,9 +3,9 @@ import {
   normPhone, fmtPhone, phoneMask, waLink, telLink, zonedToUtc, dateStrInTz, timeStrInTz, minutesInTz,
   todayInTz, addDays, isoWeekday, WD_SHORT, WD_FULL, humanDate, humanDateTime, fmtDateShort, minsToHHMM,
   durText, plural, statusBadge, STATUS, slugify, pageUrl, BRAND, INITIAL_HASH, photoUrl, resizeImage, STAFF_AUTH_KEY,
-} from './lib.js?v=20261125i';
-import { renderAuth, renderNewPassword } from './auth.js?v=20261125i';
-import { downloadXlsx } from './xlsx.js?v=20261125i';
+} from './lib.js?v=20261125j';
+import { renderAuth, renderNewPassword } from './auth.js?v=20261125j';
+import { downloadXlsx } from './xlsx.js?v=20261125j';
 
 const root = $('#root');
 const S = {
@@ -283,9 +283,15 @@ function shareModal() {
         <a class="btn" href="${qr}" download="qr-${esc(S.biz.slug)}.png" id="shDl">Скачать QR</a>
         <a class="btn" href="${esc(url)}" target="_blank" rel="noopener">Открыть страницу ↗</a>
       </div>
+      ${serviceSections().length >= 2 ? `<div style="text-align:left;width:100%"><h3 style="margin:6px 0 2px">QR для каждого раздела</h3>
+        <p class="muted small" style="margin:0 0 6px">Общий QR выше — клиент сам выберет раздел. А эти ведут сразу в раздел: повесьте у нужного места.</p>
+        ${serviceSections().map((n, i) => `<div class="sec-link"><img src="${qrDataUrl(sectionUrl(n))}" alt=""><div class="grow"><b>${esc(n)}</b>
+          <div class="row" style="gap:6px;margin-top:4px;flex-wrap:wrap"><button class="btn btn-sm" data-sc="${i}">Скопировать ссылку</button>
+          <a class="btn btn-sm" href="${qrDataUrl(sectionUrl(n))}" download="qr-${esc(S.biz.slug)}-${i + 1}.png">Скачать QR</a></div></div></div>`).join('')}</div>` : ''}
       <p class="muted small" style="margin:0">Ссылку поставьте в шапку Instagram, в WhatsApp Business и 2GIS. QR распечатайте на стойку или зеркало. На телефоне QR можно сохранить долгим нажатием на картинку.</p>
     </div>` });
   const el = m.el;
+  $$('[data-sc]', el).forEach((b) => { b.onclick = () => copyText(sectionUrl(serviceSections()[+b.dataset.sc])); });
   selectOnTap($('#shUrl', el));
   $('#shCopy', el).onclick = () => { copyText(url); onbFlag('shared'); };
   $('#shText', el).onclick = () => { copyText(text); onbFlag('shared'); };
@@ -563,7 +569,7 @@ function bookingModal(b, pre = {}) {
     <label class="field"><span>Телефон клиента</span><input class="input" name="phone" type="tel" required placeholder="+7 (___) ___-__-__"></label>
     <label class="field"><span>Имя клиента</span><input class="input" name="name" required maxlength="80"></label>
     <label class="field"><span>Услуга</span><select class="select" name="service"><option value="">— без услуги —</option>
-      ${services.map((s) => `<option value="${s.id}" ${svc0 && s.id === svc0.id ? 'selected' : ''}>${esc(s.name)}</option>`).join('')}</select></label>
+      ${groupBySection(services).map(([sec, items]) => { const o = items.map((s) => `<option value="${s.id}" ${svc0 && s.id === svc0.id ? 'selected' : ''}>${esc(s.name)}</option>`).join(''); return sec ? `<optgroup label="${esc(sec)}">${o}</optgroup>` : o; }).join('')}</select></label>
     <label class="field"><span>Сотрудник</span><select class="select" name="staff">
       ${staff.map((s) => `<option value="${s.id}" ${s.id === staffSel ? 'selected' : ''}>${esc(s.name)}</option>`).join('')}</select></label>
     <label class="field"><span>Дата</span><input class="input" type="date" name="date" required value="${date}"></label>
@@ -766,11 +772,17 @@ function renderServices() {
     };
     return;
   }
-  list.innerHTML = S.services.map((s) => `<div class="list-item ${s.is_active ? '' : 'inactive'}" data-id="${s.id}">
+  const secs = serviceSections(S.services);
+  const tip = secs.length >= 2
+    ? `<div class="alert alert-info" style="margin-bottom:6px">Клиент сначала выберет раздел: ${secs.map(esc).join(' / ')}. <a href="#" id="secQr"><b>QR для каждого раздела ›</b></a></div>`
+    : `<div class="card flat small" style="padding:10px 12px;margin-bottom:6px">💡 Если в салоне несколько направлений (например, стрижки и маникюр) — укажите у услуг <b>раздел</b>. Клиент по QR сначала выберет «💈 Барбершоп» или «💅 Маникюр», а потом услугу.</div>`;
+  const row = (s) => `<div class="list-item ${s.is_active ? '' : 'inactive'}" data-id="${s.id}">
       ${svcThumb(s)}
       <div class="grow"><b>${esc(s.name)}</b> ${s.is_active ? '' : '<span class="badge b-cancelled">скрыта</span>'}
         <div class="muted small">${durText(s.duration_min)} · ${s.photo_path ? 'с фото' : 'Без фото'}${serviceStaffNames(s) ? ' · ' + esc(serviceStaffNames(s)) : ''}</div></div>
-      <b class="nowrap">${s.price != null ? money(s.price) : ''}</b><span class="muted">›</span></div>`).join('');
+      <b class="nowrap">${s.price != null ? money(s.price) : ''}</b><span class="muted">›</span></div>`;
+  list.innerHTML = tip + groupBySection(S.services).map(([sec, items]) => `${sec ? `<h3 class="sec-h">${esc(sec)} <span class="muted small">${items.length}</span></h3>` : ''}${items.map(row).join('')}`).join('');
+  $('#secQr') && ($('#secQr').onclick = (e) => { e.preventDefault(); shareModal(); });
   $$('.list-item', list).forEach((el) => { el.onclick = () => serviceModal(S.services.find((s) => s.id === el.dataset.id)); });
 }
 
@@ -787,6 +799,10 @@ function serviceModal(s) {
           <button type="button" class="btn btn-sm btn-ghost ${s?.photo_path ? '' : 'hide'}" id="svcClr">Удалить фото</button>
           <small class="muted">JPG или PNG с телефона или компьютера</small></div></div></div>
       <label class="field full"><span>Название</span><input class="input" name="name" required maxlength="80" value="${esc(s?.name || '')}" placeholder="Например: Мужская стрижка"></label>
+      <label class="field full"><span>Раздел <span class="muted">(если направлений несколько)</span></span>
+        <input class="input" name="section" maxlength="40" list="secList" value="${esc(s?.section || '')}" placeholder="Например: 💅 Маникюр">
+        <datalist id="secList">${[...new Set([...serviceSections(S.services), ...SECTION_HINTS])].map((x) => `<option value="${esc(x)}">`).join('')}</datalist>
+        <small>Клиент сначала выберет раздел, потом услугу. Оставьте пустым, если направление одно.</small></label>
       <label class="field"><span>Длительность, мин</span><input class="input" type="number" name="dur" min="5" max="720" step="5" value="${s?.duration_min || 60}" list="durs">
         <datalist id="durs">${[15, 30, 45, 60, 90, 120, 150, 180].map((d) => `<option value="${d}">`).join('')}</datalist></label>
       <label class="field"><span>Цена, ₸</span><input class="input" type="number" name="price" min="0" step="100" value="${s?.price ?? ''}" placeholder="Можно оставить пустым"></label>
@@ -828,6 +844,7 @@ function serviceModal(s) {
       name, duration_min: Math.min(720, Math.max(5, parseInt(f.dur.value, 10) || 60)),
       price: f.price.value === '' ? null : Math.max(0, parseInt(f.price.value, 10) || 0),
       description: f.desc.value.trim() || null, is_active: f.active.checked,
+      section: f.section.value.trim().slice(0, 40) || null,
     };
     await busy(e.target, async () => {
       const r = isNew
@@ -861,13 +878,30 @@ function svcThumb(s) {
   return s && s.photo_path ? `<img class="svc-ph" src="${esc(photoUrl(s.photo_path))}" alt="" loading="lazy">` : '<span class="svc-ph">Фото</span>';
 }
 
+// Разделы услуг: «💈 Барбершоп», «💅 Маникюр»… (клиент сначала выбирает раздел)
+const SECTION_HINTS = ['💈 Барбершоп', '💇‍♀️ Женский зал', '💅 Маникюр', '🦶 Педикюр', '👁 Брови и ресницы', '💆 Массаж', '✨ Косметология', '🧴 Уход'];
+function serviceSections(list = S.services.filter((x) => x.is_active)) {
+  const out = [];
+  for (const s of list) if (s.section && !out.includes(s.section)) out.push(s.section);
+  return out;
+}
+function groupBySection(list) {
+  const secs = serviceSections(list);
+  if (!secs.length) return [[null, list]];
+  const g = secs.map((n) => [n, list.filter((x) => x.section === n)]);
+  const rest = list.filter((x) => !x.section);
+  if (rest.length) g.push(['Другое', rest]);
+  return g;
+}
+const sectionUrl = (name) => pageUrl('book.html', { b: S.biz.slug, c: name });
+
 // Прайс для менеджера — только просмотр
 function renderPriceList() {
   const list = S.services.filter((s) => s.is_active);
   $('#page').innerHTML = `${mgrBadge()}<div class="page-h"><h2>Прайс услуг</h2></div>
-    <div class="stack" style="gap:8px">${list.map((s) => `<div class="list-item" style="cursor:default">${svcThumb(s)}
+    ${list.length ? groupBySection(list).map(([sec, items]) => `${sec ? `<h3 class="sec-h">${esc(sec)}</h3>` : ''}<div class="stack" style="gap:8px">${items.map((s) => `<div class="list-item" style="cursor:default">${svcThumb(s)}
       <div class="grow"><b>${esc(s.name)}</b><div class="muted small">${durText(s.duration_min)}${s.description ? ' · ' + esc(s.description) : ''}</div></div>
-      <b class="nowrap">${s.price != null ? money(s.price) : ''}</b></div>`).join('') || '<div class="card empty">Услуг пока нет</div>'}</div>
+      <b class="nowrap">${s.price != null ? money(s.price) : ''}</b></div>`).join('')}</div>`).join('') : '<div class="card empty">Услуг пока нет</div>'}
     <p class="muted small" style="margin-top:12px">Цены и фото меняет владелец.</p>`;
 }
 
