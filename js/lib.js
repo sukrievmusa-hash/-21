@@ -1,4 +1,4 @@
-import { CONFIG } from './config.js?v=20261125h';
+import { CONFIG } from './config.js?v=20261125i';
 
 // Запоминаем адрес до того, как клиент Supabase уберёт токены из ссылки
 export const INITIAL_HASH = location.hash;
@@ -162,6 +162,7 @@ const ERR_MAP = [
   [/bookings_no_overlap|exclusion/i, 'У этого сотрудника уже есть запись на это время'],
   [/Failed to fetch|NetworkError|Load failed/i, 'Нет связи с сервером. Проверьте интернет'],
   [/JWT expired/i, 'Сессия устарела — обновите страницу'],
+  [/Could not find the function|schema cache/i, 'Эта функция ещё не включена на сервере. Напишите в поддержку'],
 ];
 export function errMsg(e) {
   const m = (e && (e.message || e.error_description || e.error)) || String(e || 'Ошибка');
