@@ -2,9 +2,9 @@
 import {
   sb, $, $$, esc, money, toast, toastErr, modal, busy, fmtPhone, telLink, waLink, zonedToUtc, dateStrInTz,
   timeStrInTz, todayInTz, addDays, confirmDlg, isoWeekday, WD_SHORT, MONTHS_SHORT, humanDate, plural, pageUrl, BRAND, copyText, STAFF_AUTH_KEY, MIGRATED_FROM,
-} from './lib.js?v=20261125f';
-import { ico } from './icons.js?v=20261125f';
-import { downloadXlsx } from './xlsx.js?v=20261125f';
+} from './lib.js?v=20261125g';
+import { ico } from './icons.js?v=20261125g';
+import { downloadXlsx } from './xlsx.js?v=20261125g';
 
 const STAFF_DOMAIN = 'staff.jazylam.kz';
 const DAYS_BACK = 1, DAYS_AHEAD = 21;
@@ -18,6 +18,7 @@ boot();
 async function boot() {
   const { data: { session } } = await sb.auth.getSession();
   if (!session) return showLogin();
+  if (/(^#|&)k=/.test(location.hash)) history.replaceState(null, '', location.pathname + location.search);
   let { data: me, error } = await sb.rpc('staff_me');
   if (error && isAuthErr(error)) {
     // токен устарел (телефон долго спал) — обновляем и пробуем ещё раз, без выхода
@@ -87,6 +88,10 @@ function showLogin(msg) {
   // ссылка из WhatsApp вида staff.html?login=... — логин уже подставлен, остаётся вставить пароль
   const pre = new URLSearchParams(location.search).get('login');
   if (pre) { f.login.value = pre.trim().toLowerCase(); setTimeout(() => f.password.focus(), 50); }
+  // ссылка «войти одним нажатием»: ?login=…#k=пароль — входим сами и стираем пароль из адреса
+  const autoKey = new URLSearchParams(location.hash.slice(1)).get('k');
+  if (autoKey) history.replaceState(null, '', location.pathname + location.search);
+  if (pre && autoKey) { f.password.value = autoKey; setTimeout(() => f.requestSubmit(), 30); }
   f.onsubmit = async (e) => {
     e.preventDefault();
     const login = f.login.value.trim().toLowerCase();

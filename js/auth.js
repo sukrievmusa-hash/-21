@@ -1,5 +1,5 @@
 // Экран входа/регистрации — общий для кабинета и админки
-import { sb, $, $$, esc, toast, toastErr, BRAND } from './lib.js?v=20261125f';
+import { sb, $, $$, esc, toast, toastErr, BRAND } from './lib.js?v=20261125g';
 
 export function renderAuth(root, { mode = 'login', onDone, allowSignup = true, title } = {}) {
   root.innerHTML = `<div class="auth-wrap"><div class="auth-card">
@@ -54,6 +54,10 @@ export function renderAuth(root, { mode = 'login', onDone, allowSignup = true, t
   setMode(mode === 'signup' && allowSignup ? 'signup' : 'login');
   const preLogin = new URLSearchParams(location.search).get('login');
   if (preLogin && mode === 'login') f.email.value = preLogin.slice(0, 60);
+  // ссылка «войти одним нажатием»: ?login=…#k=пароль — входим сами и стираем пароль из адреса
+  const autoKey = new URLSearchParams(location.hash.slice(1)).get('k');
+  if (autoKey) history.replaceState(null, '', location.pathname);
+  if (preLogin && autoKey && mode === 'login') { f.password.value = autoKey; setTimeout(() => f.requestSubmit(), 30); }
 
   const sent = (text) => {
     f.classList.add('hide');

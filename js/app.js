@@ -3,9 +3,9 @@ import {
   normPhone, fmtPhone, phoneMask, waLink, telLink, zonedToUtc, dateStrInTz, timeStrInTz, minutesInTz,
   todayInTz, addDays, isoWeekday, WD_SHORT, WD_FULL, humanDate, humanDateTime, fmtDateShort, minsToHHMM,
   durText, plural, statusBadge, STATUS, slugify, pageUrl, BRAND, INITIAL_HASH, photoUrl, resizeImage, STAFF_AUTH_KEY,
-} from './lib.js?v=20261125f';
-import { renderAuth, renderNewPassword } from './auth.js?v=20261125f';
-import { downloadXlsx } from './xlsx.js?v=20261125f';
+} from './lib.js?v=20261125g';
+import { renderAuth, renderNewPassword } from './auth.js?v=20261125g';
+import { downloadXlsx } from './xlsx.js?v=20261125g';
 
 const root = $('#root');
 const S = {
@@ -76,6 +76,7 @@ function showAuth() {
 async function boot() {
   const { data: { session } } = await sb.auth.getSession();
   if (!session) return showAuth();
+  if (/(^#|&)k=/.test(location.hash)) history.replaceState(null, '', location.pathname); // пароль из ссылки — не оставлять в адресе
   if (recovery) return renderNewPassword(root, afterRecovery);
   S.user = session.user;
   if (location.hash === '#signup') history.replaceState(null, '', location.pathname);
@@ -1196,50 +1197,41 @@ function staffAccessEditor(box, s) {
   draw();
 }
 
-// Логин и пароль — отдельными сообщениями WhatsApp: в WhatsApp нельзя скопировать часть сообщения,
-// а так мастер копирует логин и пароль одним нажатием. Ссылка сама подставляет логин на странице входа.
+// Логин и пароль — одним сообщением: ссылка сама входит в кабинет (пароль в #-части адреса,
+// на сервер она не уходит и сразу стирается из адресной строки). Логин и пароль — отдельными строками на всякий случай.
 function credentialsModal(name, login, password, opts = {}) {
-  const url = `${pageUrl(opts.page || 'staff.html')}?login=${encodeURIComponent(login)}`;
-  const msgs = [
-    ['Приветствие и ссылка', opts.who === 'менеджера'
-      ? `Здравствуйте, ${name}! Ваш вход в ${BRAND} (кабинет менеджера): журнал записей, клиенты, касса и закрытие смены.\n\nВход: ${url}\n\nЛогин и пароль пришлю следующими сообщениями — нажмите на сообщение и скопируйте.`
-      : `Здравствуйте, ${name}! Ваш личный кабинет в ${BRAND} — там ваши записи и клиенты.\n\nВход: ${url}\n\nЛогин и пароль пришлю следующими сообщениями — нажмите на сообщение и скопируйте.\nПосле входа нажмите «Подключить Telegram», чтобы получать уведомления о своих записях.`],
-    ['Логин', login],
-    ['Пароль', password],
-  ];
+  const isMgr = opts.who === 'менеджера';
+  const url = `${pageUrl(opts.page || 'staff.html')}?login=${encodeURIComponent(login)}#k=${encodeURIComponent(password)}`;
+  const text = `Здравствуйте, ${name}! Ваш вход в ${BRAND}${isMgr ? ' (кабинет менеджера)' : ' — там ваши записи и клиенты'}.\n\n`
+    + `👉 Войти одним нажатием:\n${url}\n\nЕсли попросит ввести вручную:\nЛогин: ${login}\nПароль: ${password}`
+    + (isMgr ? '' : '\n\nПосле входа нажмите «Подключить Telegram», чтобы получать уведомления о своих записях.');
   const key = `jz_staff_wa_${login}`;
   const m = modal({
     title: `Вход для ${name}`,
-    body: `<div class="alert alert-warn" style="margin-bottom:12px">Пароль больше не покажется — отправьте сейчас. Забудет — нажмите «Новый пароль».</div>
-      <div class="card" style="padding:12px;margin-bottom:12px">
-        ${[['Логин', login], ['Пароль', password]].map(([t, v], i) => `<div style="display:grid;grid-template-columns:1fr auto;gap:2px 8px;align-items:center;${i ? 'margin-top:10px' : ''}">
-          <span class="muted small">${t}</span><button class="btn btn-sm" data-copy="${i}" style="grid-row:span 2">Копировать</button>
-          <b style="font-family:monospace;font-size:17px;letter-spacing:.5px;word-break:break-all">${esc(v)}</b></div>`).join('')}
+    body: `<div class="card flat" style="padding:12px;margin-bottom:12px">
+        ${[['Логин', login], ['Пароль', password]].map(([t, v], i) => `<div class="pay-row" style="${i ? 'margin-top:10px' : ''}">
+          <div><div class="muted small">${t}</div><b style="font-family:monospace;font-size:18px;letter-spacing:.5px;word-break:break-all">${esc(v)}</b></div>
+          <button class="btn btn-sm" data-copy="${i}">Копировать</button></div>`).join('')}
       </div>
-      <label class="field" style="margin-bottom:10px"><span>WhatsApp ${opts.who === 'менеджера' ? 'менеджера' : 'сотрудника'} <span class="muted">(чтобы все 3 сообщения ушли в один чат)</span></span>
+      <label class="field" style="margin-bottom:12px"><span>WhatsApp ${isMgr ? 'менеджера' : 'сотрудника'} <span class="muted">(необязательно — сразу откроется нужный чат)</span></span>
         <input class="input" name="wa" type="tel" inputmode="tel" placeholder="+7 (___) ___-__-__" value="${esc(store.get(key, ''))}"></label>
-      <p class="muted small" style="margin:0 0 8px">Нажмите по очереди — WhatsApp откроется 3 раза, каждый раз нажмите «Отправить»:</p>
-      <div class="stack" style="gap:8px">${msgs.map(([t], i) => `<button class="btn btn-block" data-send="${i}" style="justify-content:flex-start">
-        <span class="badge b-booked">${i + 1}</span><span style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(t)}</span><span class="grow"></span><b data-ok="${i}" style="color:var(--ok)"></b></button>`).join('')}</div>`,
-    footer: '<button class="btn" data-a="all">Скопировать всё одним текстом</button><button class="btn btn-pri" data-a="close">Готово</button>',
+      <button class="btn btn-wa btn-block btn-lg" data-send="wa">📲 Отправить в WhatsApp</button>
+      <div class="row" style="gap:8px;margin-top:8px"><button class="btn grow" data-send="tg">✈️ Telegram</button><button class="btn grow" data-send="copy">📋 Скопировать сообщение</button></div>
+      <p class="muted small" style="margin:10px 0 0">Одно сообщение: ${isMgr ? 'менеджер' : 'сотрудник'} нажмёт на ссылку и сразу окажется в кабинете — ничего копировать не нужно.
+        Пароль больше не покажется. Забудет — нажмите «Новый пароль».</p>`,
+    footer: '<button class="btn btn-pri" data-a="close">Готово</button>',
   });
   const wa = $('[name=wa]', m.el);
   phoneMask(wa);
   $$('[data-copy]', m.el).forEach((b) => { b.onclick = () => copyText(b.dataset.copy === '0' ? login : password); });
-  $$('[data-send]', m.el).forEach((b) => {
-    b.onclick = () => {
-      const i = +b.dataset.send, phone = normPhone(wa.value);
-      if (wa.value.trim() && !phone) return toastErr('Проверьте номер WhatsApp');
-      if (phone) store.set(key, wa.value);
-      window.open(waLink(phone || '', msgs[i][1]), '_blank', 'noopener');
-      $(`[data-ok="${i}"]`, m.el).textContent = '✓';
-      b.classList.remove('btn-pri');
-      const next = $(`[data-send="${i + 1}"]`, m.el);
-      if (next) next.classList.add('btn-pri');
-    };
-  });
-  $('[data-send="0"]', m.el).classList.add('btn-pri');
-  $('[data-a=all]', m.el).onclick = () => copyText(`${msgs[0][1]}\n\nЛогин: ${login}\nПароль: ${password}`);
+  $('[data-send=wa]', m.el).onclick = () => {
+    const phone = normPhone(wa.value);
+    if (wa.value.trim() && !phone) return toastErr('Проверьте номер WhatsApp');
+    if (phone) store.set(key, wa.value);
+    window.open(waLink(phone || '', text), '_blank', 'noopener');
+  };
+  $('[data-send=tg]', m.el).onclick = () => window.open(`https://t.me/share/url?url=${encodeURIComponent(url)}&text=${encodeURIComponent(text.replace(url, '').replace(/\n{3,}/g, '\n\n'))}`, '_blank', 'noopener');
+  $('[data-send=copy]', m.el).onclick = () => copyText(text);
   $('[data-a=close]', m.el).onclick = m.close;
 }
 
