@@ -2,9 +2,9 @@
 import {
   sb, $, $$, esc, money, toast, toastErr, modal, busy, fmtPhone, telLink, waLink, zonedToUtc, dateStrInTz,
   timeStrInTz, todayInTz, addDays, confirmDlg, isoWeekday, WD_SHORT, MONTHS_SHORT, humanDate, plural, pageUrl, BRAND, copyText, STAFF_AUTH_KEY, MIGRATED_FROM,
-} from './lib.js?v=20261125k';
-import { ico } from './icons.js?v=20261125k';
-import { downloadXlsx } from './xlsx.js?v=20261125k';
+} from './lib.js?v=20261125l';
+import { ico } from './icons.js?v=20261125l';
+import { downloadXlsx } from './xlsx.js?v=20261125l';
 
 const STAFF_DOMAIN = 'staff.jazylam.kz';
 const DAYS_BACK = 1, DAYS_AHEAD = 21;

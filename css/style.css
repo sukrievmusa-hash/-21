@@ -611,3 +611,80 @@ details.card[open] > summary::before { content: "▾ "; }
 .btn-tg:hover { background: #1c8cc3; border-color: #1c8cc3; color: #fff; }
 .btn-pri:hover { color: #fff; }
 html[data-theme="dark"] .btn-pri:hover { color: #111; }
+
+/* =====================================================================
+   Макет B «Только главное»: строки вместо карточек, 3 кнопки внизу
+   ===================================================================== */
+.show-phone { display: none; }
+.menu-btn .ic { width: 22px; height: 22px; }
+.ic { width: 20px; height: 20px; flex: none; vertical-align: -4px; }
+.td-top { display: flex; align-items: center; gap: 4px; margin: 2px 0 0; }
+.td-arrow { border: 0; background: none; width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center; color: var(--muted); cursor: pointer; }
+.td-arrow:hover { background: var(--pri-tint); color: var(--text); }
+.td-date { position: relative; font-size: 15px; color: var(--muted); padding: 4px 6px; border-radius: 8px; cursor: pointer; }
+.td-date input { position: absolute; inset: 0; opacity: 0; width: 100%; cursor: pointer; }
+.td-date input::-webkit-calendar-picker-indicator { position: absolute; inset: 0; width: 100%; height: 100%; cursor: pointer; }
+.td-total { font-size: 48px; font-weight: 800; letter-spacing: -.04em; line-height: 1.05; margin: 14px 0 6px; }
+.td-cap { font-size: 15px; color: var(--muted); }
+.td-cap b { color: var(--text); font-weight: 600; }
+.td-staff { margin-top: 14px; border: 0; background: transparent; color: var(--text); font: inherit; font-weight: 600; font-size: 15px; padding: 4px 0; cursor: pointer; }
+.td-empty { text-align: center; padding: 34px 10px; color: var(--muted); }
+.td-empty p { margin: 0 0 14px; }
+.rw-h { font-size: 13px; color: var(--muted); margin: 24px 0 2px; font-weight: 500; }
+.rw { display: grid; grid-template-columns: 50px 1fr auto; gap: 10px; align-items: center; padding: 13px 2px; border-bottom: 1px solid var(--line); cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.rw:hover { background: var(--pri-tint); }
+.rw-tm { font-weight: 600; font-size: 15px; }
+.rw-mid { min-width: 0; display: flex; flex-direction: column; }
+.rw-nm { font-weight: 600; font-size: 16px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rw-mt { font-size: 13px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rw-st { font-size: 13px; color: var(--muted); text-align: right; white-space: nowrap; }
+.rw-st.ok { color: var(--ok); font-weight: 600; }
+.rw-st.bad { color: var(--danger); }
+.rw.past .rw-nm, .rw.past .rw-tm { color: var(--muted); font-weight: 500; }
+.rw.now { border-bottom: 0; padding-bottom: 6px; }
+.rw-inl { display: flex; gap: 8px; padding: 0 0 14px 60px; border-bottom: 1px solid var(--line); }
+.rw-inl .btn-pri { flex: 1; }
+.rw-ib { width: 46px; padding: 0; flex: none; display: grid; place-items: center; }
+.link { border: 0; background: none; color: var(--pri); font: inherit; font-weight: 600; font-size: 15px; padding: 6px 0; cursor: pointer; }
+html[data-theme="graphite"] .link { color: #1f6f5c; }
+.link-muted { color: var(--muted) !important; font-weight: 500; }
+.li-list { display: flex; flex-direction: column; }
+.li { display: flex; align-items: center; gap: 12px; width: 100%; border: 0; background: none; padding: 15px 2px; border-bottom: 1px solid var(--line); font: inherit; font-size: 16px; color: var(--text); text-align: left; cursor: pointer; text-decoration: none !important; }
+.li:last-child { border-bottom: 0; }
+.li .ic { color: var(--muted); }
+.li.danger, .li.danger .ic { color: var(--danger); }
+.li:hover { background: var(--pri-tint); }
+.sheet-b .modal-h { border-bottom: 0; padding-bottom: 4px; }
+.sheet-b .modal-h h3 { font-size: 19px; }
+.sheet-b .modal-b { padding-top: 6px; }
+.pay-amt { display: flex; justify-content: center; align-items: baseline; gap: 6px; margin: 20px 0 6px; }
+.pay-amt input { border: 0; background: transparent; font: inherit; font-size: 46px; font-weight: 800; letter-spacing: -.03em; color: var(--text); width: 6.5ch; text-align: right; outline: none; border-bottom: 2px dashed var(--line); padding: 0; }
+.pay-amt input:focus { border-bottom-color: var(--pri); }
+.pay-amt span { font-size: 40px; font-weight: 800; }
+.pills { display: flex; gap: 8px; justify-content: center; margin: 12px 0 20px; flex-wrap: wrap; }
+.pills button { border: 1px solid var(--line); background: none; border-radius: 999px; padding: 9px 16px; font: inherit; font-weight: 500; font-size: 15px; color: var(--text); cursor: pointer; }
+.pills button.on { border-color: var(--pri); background: var(--pri-tint); color: var(--pri); font-weight: 600; }
+.ln-tabs { display: flex; gap: 18px; border-bottom: 1px solid var(--line); margin-bottom: 6px; overflow-x: auto; }
+.ln-tabs button { border: 0; background: none; padding: 10px 0; font: inherit; font-size: 15px; color: var(--muted); border-bottom: 2px solid transparent; margin-bottom: -1px; cursor: pointer; white-space: nowrap; }
+.ln-tabs button.on { color: var(--text); font-weight: 600; border-color: var(--text); }
+.big3 .l { display: flex; justify-content: space-between; align-items: baseline; padding: 12px 0; border-bottom: 1px solid var(--line); }
+.big3 .l span { color: var(--muted); font-size: 15px; }
+.big3 .l b { font-size: 22px; letter-spacing: -.02em; }
+.big3 .l.res { border-bottom: 0; }
+.big3 .l.res b { font-size: 34px; color: var(--ok); }
+.m-chart { margin-top: 6px; }
+.kv-b { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 12px 2px; border-bottom: 1px solid var(--line); font-size: 15px; }
+.kv-b.tap { cursor: pointer; }
+.kv-b.tap:hover { background: var(--pri-tint); }
+.kv-b b { white-space: nowrap; }
+@media (max-width: 760px) {
+  .show-phone { display: inline-flex; }
+  body.has-bnav #shareBtn { display: none; }
+  .bnav { grid-template-columns: 1fr 88px 1fr; }
+  .bn .bi { width: 24px; height: 24px; filter: none; opacity: 1; }
+  .bn.on { background: none; color: var(--text); }
+  .bn-plus { width: 58px; height: 58px; border-radius: 18px; margin: 0 auto; border: 0; display: grid; place-items: center; box-shadow: 0 6px 16px -6px rgba(0,0,0,.35); }
+  .bn-plus .ic { width: 28px; height: 28px; color: #fff; }
+  html[data-theme="dark"] .bn-plus .ic { color: #111; }
+  .td-total { font-size: 46px; }
+}
