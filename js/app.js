@@ -3,9 +3,9 @@ import {
   normPhone, fmtPhone, phoneMask, waLink, telLink, zonedToUtc, dateStrInTz, timeStrInTz, minutesInTz,
   todayInTz, addDays, isoWeekday, WD_SHORT, WD_FULL, humanDate, humanDateTime, fmtDateShort, minsToHHMM,
   durText, plural, statusBadge, STATUS, slugify, pageUrl, BRAND, INITIAL_HASH, photoUrl, resizeImage, STAFF_AUTH_KEY,
-} from './lib.js?v=20261124b';
-import { renderAuth, renderNewPassword } from './auth.js?v=20261124b';
-import { downloadXlsx } from './xlsx.js?v=20261124b';
+} from './lib.js?v=20261125a';
+import { renderAuth, renderNewPassword } from './auth.js?v=20261125a';
+import { downloadXlsx } from './xlsx.js?v=20261125a';
 
 const root = $('#root');
 const S = {
@@ -287,7 +287,7 @@ function onbFlag(key) {
 
 function renderJournal() {
   if (!S.day) S.day = todayInTz(tz());
-  $('#page').innerHTML = `${S.role === 'manager' ? '' : checklistHtml()}${shareBarHtml()}
+  $('#page').innerHTML = `${S.role === 'manager' ? mgrBadge() : checklistHtml()}${shareBarHtml()}
     <div class="page-h">
       <div class="day-nav">
         <button class="btn btn-sm" id="prev" aria-label="Предыдущий день">‹</button>
@@ -717,7 +717,7 @@ function renderStaff() {
     <div class="alert ${n >= limit ? 'alert-warn' : 'alert-info'}" style="margin-bottom:12px">Работают ${n} из ${limit} по тарифу «${esc(p.title)}».${n >= limit && bigger ? ` Нужно больше — тариф <a href="#billing">«${esc(bigger.title)}»</a> (до ${bigger.staff_limit}).` : ''}</div>
     <div id="list">${S.staff.map((s) => `<div class="list-item ${s.is_active ? '' : 'inactive'}" data-id="${s.id}">
       <span class="avatar">${esc(s.name[0]?.toUpperCase() || '?')}</span>
-      <div class="grow"><b>${esc(s.name)}</b>${s.title ? ` <span class="muted">· ${esc(s.title)}</span>` : ''} ${s.is_active ? '' : '<span class="badge b-cancelled">не работает</span>'}
+      <div class="grow"><b>${esc(s.name)}</b>${s.title ? ` <span class="muted">· ${esc(s.title)}</span>` : ''}${s.share_pct ? ` <span class="muted small">· доля ${s.share_pct}%</span>` : ''} ${s.is_active ? '' : '<span class="badge b-cancelled">не работает</span>'}
         <div class="muted small">${esc(scheduleText(s.id))}</div>
         <div class="small" style="margin-top:2px">${s.user_id ? `🔑 вход: <b>${esc(s.login)}</b>${s.tg_chat_id ? ' · ✈️ Telegram подключён' : ' · Telegram не подключён'}` : '<span class="muted">🔒 нет входа — откройте, чтобы выдать логин и пароль</span>'}</div></div><span class="muted">›</span></div>`).join('') || '<div class="card empty">Сотрудников пока нет</div>'}</div>
     <div class="page-h" style="margin-top:22px"><h3 style="margin:0">Менеджеры</h3><button class="btn btn-sm btn-pri" id="addMgr">+ Менеджер</button></div>
@@ -971,7 +971,7 @@ function drawCash(rows, from, to, label) {
     <div class="card day-list">${rows.map((r) => `<div class="item" data-id="${r.id}" style="cursor:pointer">
       <div class="t" style="min-width:78px">${esc(humanDate(dateStrInTz(r.occurred_at, tz()), false))}<div class="muted small" style="font-weight:400">${timeStrInTz(r.occurred_at, tz())}</div></div>
       <div class="grow"><b>${esc(r.client_name || 'Клиент без имени')}</b> <span class="muted small">${esc(r.staff_name || '')}</span>
-        <div class="muted small">${[r.service_name, PAY[r.method], r.price_expected != null && r.price_expected !== r.amount ? 'по записи ' + money(r.price_expected) : '', r.note, r.created_by === 'owner' ? 'добавлено администратором' : ''].filter(Boolean).map(esc).join(' · ')}</div></div>
+        <div class="muted small">${[r.service_name, PAY[r.method], r.price_expected != null && r.price_expected !== r.amount ? 'по записи ' + money(r.price_expected) : '', r.note, r.created_by === 'owner' ? 'добавлено владельцем' : r.created_by === 'manager' ? 'принял менеджер' : ''].filter(Boolean).map(esc).join(' · ')}</div></div>
       <b>${money(r.amount)}</b></div>`).join('')}</div>`;
   $$('.item', box).forEach((el) => { el.onclick = () => earningModal(rows.find((r) => r.id === el.dataset.id)); });
   $('#addE').onclick = () => earningModal(null);
@@ -985,7 +985,7 @@ function exportCash(rows, from, to, label, staffRows) {
   const detail = [['Дата', 'Время', 'Сотрудник', 'Клиент', 'Услуга', 'Способ оплаты', 'Сумма', 'Цена по записи', 'Комментарий'].map(H),
     ...sorted.map((r) => [{ v: dateStrInTz(r.occurred_at, tz()), t: 'date' }, timeStrInTz(r.occurred_at, tz()), r.staff_name || '', r.client_name || '', r.service_name || '',
       PAY[r.method] || r.method, { v: r.amount, t: 'money' }, r.price_expected != null ? { v: r.price_expected, t: 'money' } : '',
-      [r.note, r.created_by === 'owner' ? 'добавил администратор' : ''].filter(Boolean).join('; ')])];
+      [r.note, r.created_by === 'owner' ? 'добавил владелец' : r.created_by === 'manager' ? 'принял менеджер' : ''].filter(Boolean).join('; ')])];
   const n = detail.length - 1;
   detail.push([{ v: 'ИТОГО', bold: true }, '', '', '', '', '', { v: total, t: 'money', bold: true }]);
   const bySt = [['Сотрудник', 'Клиентов', 'Наличные', 'Kaspi', 'Карта', 'Итого', 'Средний чек'].map(H),
@@ -1119,7 +1119,7 @@ function credentialsModal(name, login, password, opts = {}) {
           <span class="muted small">${t}</span><button class="btn btn-sm" data-copy="${i}" style="grid-row:span 2">Копировать</button>
           <b style="font-family:monospace;font-size:17px;letter-spacing:.5px;word-break:break-all">${esc(v)}</b></div>`).join('')}
       </div>
-      <label class="field" style="margin-bottom:10px"><span>WhatsApp сотрудника <span class="muted">(чтобы все 3 сообщения ушли в один чат)</span></span>
+      <label class="field" style="margin-bottom:10px"><span>WhatsApp ${opts.who === 'менеджера' ? 'менеджера' : 'сотрудника'} <span class="muted">(чтобы все 3 сообщения ушли в один чат)</span></span>
         <input class="input" name="wa" type="tel" inputmode="tel" placeholder="+7 (___) ___-__-__" value="${esc(store.get(key, ''))}"></label>
       <p class="muted small" style="margin:0 0 8px">Нажмите по очереди — WhatsApp откроется 3 раза, каждый раз нажмите «Отправить»:</p>
       <div class="stack" style="gap:8px">${msgs.map(([t], i) => `<button class="btn btn-block" data-send="${i}" style="justify-content:flex-start">
@@ -1694,6 +1694,9 @@ async function renderBilling() {
 // =====================================================================
 //  Бухгалтерия владельца и касса менеджера
 // =====================================================================
+function mgrBadge() {
+  return `<div class="muted small" style="margin:4px 0 10px">👤 Вы вошли как менеджер: <b>${esc(S.mgr?.name || '')}</b></div>`;
+}
 const sum = (rows, f = (r) => r.amount) => rows.reduce((a, r) => a + (f(r) || 0), 0);
 const hhmm = (iso) => timeStrInTz(iso, tz());
 
@@ -1762,7 +1765,7 @@ async function renderAcc() {
       <p class="muted small" style="margin:8px 0 0">Налог считается от выручки за период — это ориентир для вас, не расчёт для налоговой. Ставку и порядок уплаты уточните у бухгалтера.</p></div>
     <h3 style="margin:6px 0">Зарплата мастерам</h3>
     <div class="table-wrap card" style="margin-bottom:16px">${salary.length ? `<table class="table"><thead><tr><th>Мастер</th><th>Выручка</th><th>Доля</th><th>К выплате</th></tr></thead><tbody>
-      ${salary.map((x) => `<tr><td><b>${esc(x.st.name)}</b></td><td>${money(x.rev) || '0 ₸'}</td><td>${x.pct}%</td><td><b>${money(x.pay) || '0 ₸'}</b></td></tr>`).join('')}
+      ${salary.map((x) => `<tr><td><b>${esc(x.st.name)}</b></td><td>${money(x.rev) || '0 ₸'}</td><td>${x.pct ? x.pct + '%' : '<span class="muted" title="Укажите долю в карточке сотрудника">не задана</span>'}</td><td><b>${money(x.pay) || '0 ₸'}</b></td></tr>`).join('')}
       <tr><td><b>Итого</b></td><td>${money(sum(salary, (x) => x.rev)) || '0 ₸'}</td><td></td><td><b>${money(salaryTotal) || '0 ₸'}</b></td></tr></tbody></table>`
       : '<div class="empty small">Нет данных. Укажите долю мастера в карточке сотрудника.</div>'}</div>
     <h3 style="margin:6px 0">Расходы и налоговые платежи</h3>
@@ -1825,7 +1828,7 @@ async function renderMgrCash() {
   const day = todayInTz(tz());
   $('#page').innerHTML = `<div class="page-h"><h2>Касса за сегодня</h2>
       <span class="row" style="gap:8px;flex-wrap:wrap"><button class="btn btn-sm btn-pri" id="addE">+ Оплата</button><button class="btn btn-sm" id="addX">+ Расход</button><button class="btn btn-sm" id="closeS">🔒 Закрыть смену</button></span></div>
-    <div class="muted small" style="margin-bottom:12px">${esc(humanDate(day, false))}. Прошлые дни и общие итоги видит только владелец.</div>
+    ${mgrBadge()}<div class="muted small" style="margin-bottom:12px">${esc(humanDate(day, false))}. Прошлые дни и общие итоги видит только владелец.</div>
     <div id="mBody"><div class="spinner"></div></div>`;
   $('#addE').onclick = () => mgrPayModal({});
   $('#addX').onclick = () => mgrExpenseModal();
@@ -1835,7 +1838,7 @@ async function renderMgrCash() {
   if (!$('#mBody')) return;
   const total = sum(earn), cash = sum(earn.filter((r) => r.method === 'cash')), costs = sum(exp);
   $('#closeS').onclick = async (e) => {
-    if (!(await confirmDlg(`Закрыть смену? Выручка ${money(total) || '0 ₸'}, наличные ${money(cash) || '0 ₸'}, расходы ${money(costs) || '0 ₸'}. Владелец получит итог в Telegram.`, 'Закрыть смену'))) return;
+    if (!(await confirmDlg(`Закрыть смену? Выручка ${money(total) || '0 ₸'}, наличные ${money(cash) || '0 ₸'}, расходы ${money(costs) || '0 ₸'}, в кассе ${money(cash - costs) || '0 ₸'}. Владелец получит итог в Telegram.`, 'Закрыть смену'))) return;
     await busy(e.target, async () => {
       const { data, error } = await sb.rpc('close_shift', { p_note: null });
       if (error) return toastErr(error);
@@ -1873,6 +1876,7 @@ function mgrPayModal(pre) {
     footer: '<button class="btn" data-a="close">Отмена</button><button class="btn btn-pri" data-a="save">Принять оплату</button>',
   });
   $('[data-a=close]', m.el).onclick = m.close;
+  setTimeout(() => { const a = $('#pf2 [name=amount]', m.el); a && a.focus(); }, 50);
   $('[data-a=save]', m.el).onclick = (e) => busy(e.target, async () => {
     const f = $('#pf2', m.el);
     const amount = Math.round(Number(f.amount.value));
